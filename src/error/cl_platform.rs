@@ -1,5 +1,7 @@
 #[derive(Debug)]
 pub enum PlatformError {
-    FormatError(i32),
+    GetDataError(i32),
     GetIdError(i32),
+    CouldNotFindPlatform,
+    CouldNotGetDevice(i32),
 }

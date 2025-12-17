@@ -1,51 +1,70 @@
-pub trait Formater {
-    fn from_buffer(buffer: Vec<u8>) -> Self;
+pub trait Formatter: Sized {
+    /// Converts a byte buffer into Self
+    /// Returns None if the buffer length is invalid
+    fn from_buffer(buffer: &[u8]) -> Option<Self>;
 }
 
-impl Formater for f32 {
-    fn from_buffer(buffer: Vec<u8>) -> Self {
-        let bytes = [buffer[0], buffer[1], buffer[2], buffer[3]];
-        f32::from_le_bytes(bytes)
+macro_rules! impl_from_le_bytes {
+    ($t:ty, $size:expr) => {
+        impl Formatter for $t {
+            #[inline]
+            fn from_buffer(buffer: &[u8]) -> Option<Self> {
+                if buffer.len() != $size {
+                    return None;
+                }
+                let mut bytes = [0u8; $size];
+                bytes.copy_from_slice(buffer);
+                Some(<$t>::from_le_bytes(bytes))
+            }
+        }
+    };
+}
+
+
+impl_from_le_bytes!(f32, 4);
+impl_from_le_bytes!(f64, 8);
+impl_from_le_bytes!(i32, 4);
+impl_from_le_bytes!(u32, 4);
+impl_from_le_bytes!(i64, 8);
+impl_from_le_bytes!(u64, 8);
+
+
+impl Formatter for bool {
+    fn from_buffer(buffer: &[u8]) -> Option<Self> {
+        u32::from_buffer(buffer).map(|x| x != 0)
     }
 }
 
-impl Formater for f64 {
-    fn from_buffer(buffer: Vec<u8>) -> Self {
-        let bytes = [buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7]];
-        f64::from_le_bytes(bytes)
+impl Formatter for usize {
+    fn from_buffer(buffer: &[u8]) -> Option<Self> {
+        if buffer.len() != std::mem::size_of::<usize>() {
+            return None;
+        }
+        let mut bytes = vec![0u8; std::mem::size_of::<usize>()];
+        bytes.copy_from_slice(buffer);
+        let arr: [u8; std::mem::size_of::<usize>()] = bytes.try_into().ok()?;
+        Some(usize::from_le_bytes(arr))
     }
 }
 
-impl Formater for i32 {
-    fn from_buffer(buffer: Vec<u8>) -> Self {
-        let bytes = [buffer[0], buffer[1], buffer[2], buffer[3]];
-        i32::from_le_bytes(bytes)
+
+impl Formatter for String {
+    fn from_buffer(buffer: &[u8]) -> Option<Self> {
+        String::from_utf8(buffer.to_vec()).ok()
     }
 }
-
-impl Formater for u32 {
-    fn from_buffer(buffer: Vec<u8>) -> Self {
-        let bytes = [buffer[0], buffer[1], buffer[2], buffer[3]];
-        u32::from_le_bytes(bytes)
-    }
-}
-
-impl Formater for i64 {
-    fn from_buffer(buffer: Vec<u8>) -> Self {
-        let bytes = [buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7]];
-        i64::from_le_bytes(bytes)
-    }
-}
-
-impl Formater for u64 {
-    fn from_buffer(buffer: Vec<u8>) -> Self {
-        let bytes = [buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7]];
-        u64::from_le_bytes(bytes)
-    }
-}
-
-impl Formater for String {
-    fn from_buffer(buffer: Vec<u8>) -> Self {
-        String::from_utf8_lossy(&buffer).into_owned()
+impl Formatter for Vec<usize> {
+    fn from_buffer(buffer: &[u8]) -> Option<Self> {
+        if buffer.len() % std::mem::size_of::<usize>() != 0 {
+            return None;
+        }
+        let mut result = Vec::new();
+        for chunk in buffer.chunks_exact(std::mem::size_of::<usize>()) {
+            let mut bytes = vec![0u8; std::mem::size_of::<usize>()];
+            bytes.copy_from_slice(chunk);
+            let arr: [u8; std::mem::size_of::<usize>()] = bytes.try_into().ok()?;
+            result.push(usize::from_le_bytes(arr));
+        }
+        Some(result)
     }
 }
