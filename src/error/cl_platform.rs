@@ -4,4 +4,5 @@ pub enum PlatformError {
     GetIdError(i32),
     CouldNotFindPlatform,
     CouldNotGetDevice(i32),
+    FailedToFormat
 }

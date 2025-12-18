@@ -1,10 +1,10 @@
 use crate::cl_platform_generate_getters;
 use crate::cl_types::cl_device::ClDevice;
-use crate::{cl_types::formater::Formatter, error::cl_platform::PlatformError};
+use crate::{cl_types::formatter::Formatter, error::cl_platform::PlatformError};
 use std::{fmt, os::raw::c_void};
 
 pub struct ClPlatform {
-    value: cl3::types::cl_platform_id,
+    value: *mut c_void,
 }
 
 impl ClPlatform {
@@ -12,7 +12,7 @@ impl ClPlatform {
         ClPlatform { value }
     }
     
-    pub fn get_platform_id(&self) -> *mut c_void {
+    pub fn as_ptr(&self) -> *mut c_void {
         self.value
     }
 
@@ -133,6 +133,7 @@ impl ClPlatform {
                 .map_err(PlatformError::CouldNotGetDevice)?;
         Ok(raw_devices.iter().map(|dev| ClDevice::new(*dev)).collect())
     }
+
 }
 
 impl fmt::Display for ClPlatform {

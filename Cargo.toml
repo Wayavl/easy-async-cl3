@@ -5,11 +5,11 @@ edition = "2024"
 
 [features]
 CL_VERSION_1_1 = ["cl3/CL_VERSION_1_1"]
-CL_VERSION_1_2 = ["cl3/CL_VERSION_1_2"]
-CL_VERSION_2_0 = ["cl3/CL_VERSION_2_0"]
-CL_VERSION_2_1 = ["cl3/CL_VERSION_2_1"]
-CL_VERSION_2_2 = ["cl3/CL_VERSION_2_2"]
-CL_VERSION_3_0 = ["cl3/CL_VERSION_3_0"]
+CL_VERSION_1_2 = ["cl3/CL_VERSION_1_2", "CL_VERSION_1_1"]
+CL_VERSION_2_0 = ["cl3/CL_VERSION_2_0", "CL_VERSION_1_2"]
+CL_VERSION_2_1 = ["cl3/CL_VERSION_2_1", "CL_VERSION_2_0"]
+CL_VERSION_2_2 = ["cl3/CL_VERSION_2_2", "CL_VERSION_2_1"]
+CL_VERSION_3_0 = ["cl3/CL_VERSION_3_0", "CL_VERSION_2_2"]
 cl_apple_setmemobjectdestructor = ["cl3/cl_apple_setmemobjectdestructor"]
 cl_apple_contextloggingfunctions = ["cl3/cl_apple_contextloggingfunctions"]
 cl_khr_icd = ["cl3/cl_khr_icd"]
@@ -52,7 +52,7 @@ cl_loader_layers = ["cl3/cl_loader_layers"]
 cl_img_cancel_command = ["cl3/cl_img_cancel_command"]
 cl_qcom_perf_hint = ["cl3/cl_qcom_perf_hint"]
 
-default = ["CL_VERSION_1_2"]
+default = ["CL_VERSION_3_0"]
 
 
 [dependencies]
