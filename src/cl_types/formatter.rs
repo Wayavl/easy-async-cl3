@@ -51,12 +51,12 @@ impl Formatter for usize {
     }
 }
 
-
 impl Formatter for String {
     fn from_buffer(buffer: &[u8]) -> Option<Self> {
         String::from_utf8(buffer.to_vec()).ok()
     }
 }
+
 impl Formatter for Vec<usize> {
     fn from_buffer(buffer: &[u8]) -> Option<Self> {
         if buffer.len() % std::mem::size_of::<usize>() != 0 {

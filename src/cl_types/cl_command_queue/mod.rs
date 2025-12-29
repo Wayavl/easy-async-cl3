@@ -1,11 +1,13 @@
 pub mod command_queue_parameters;
 use std::os::raw::c_void;
 
+#[cfg(feature = "CL_VERSION_1_1")]
+use crate::error::ClError;
 use crate::{
     cl_command_queue_generate_getters,
     cl_types::{cl_context::ClContext, cl_device::ClDevice, releaseable::Releaseable},
-    error::cl_command_queue::CommandQueueError,
 };
+use crate::error::api_error::ApiError;
 
 pub struct ClCommandQueue {
     value: *mut c_void,
@@ -30,14 +32,14 @@ impl ClCommandQueue {
         context: &ClContext,
         device: &ClDevice,
         properties: u64,
-    ) -> Result<Self, CommandQueueError> {
+    ) -> Result<Self, ClError> {
         let raw_command_queue = unsafe {
             cl3::command_queue::create_command_queue(
                 context.as_ptr(),
                 device.as_ptr(),
                 properties,
             )
-            .map_err(CommandQueueError::CommandQueueFailed)
+            .map_err(|data| ClError::Api(ApiError::get_error(data)))
         }?;
 
         Ok(Self {
@@ -50,14 +52,14 @@ impl ClCommandQueue {
         context: &ClContext,
         device: &ClDevice,
         properties: &Vec<u64>,
-    ) -> Result<Self, CommandQueueError> {
+    ) -> Result<Self, ClError> {
         let raw_command_queue = unsafe {
             cl3::command_queue::create_command_queue_with_properties(
                 context.as_ptr(),
                 device.as_ptr(),
                 properties.as_ptr(),
             )
-            .map_err(CommandQueueError::CommandQueueWithPropertiesFailed)
+            .map_err(|code| ClError::Api(ApiError::get_error(code)))
         }?;
 
         Ok(Self {

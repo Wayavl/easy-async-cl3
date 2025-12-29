@@ -1,7 +1,10 @@
 use crate::cl_platform_generate_getters;
 use crate::cl_types::cl_device::ClDevice;
-use crate::{cl_types::formatter::Formatter, error::cl_platform::PlatformError};
+#[cfg(feature = "CL_VERSION_1_1")]
+use crate::error::ClError;
+use crate::{cl_types::formatter::Formatter};
 use std::{fmt, os::raw::c_void};
+use crate::error::api_error::ApiError;
 
 pub struct ClPlatform {
     value: *mut c_void,
@@ -17,14 +20,16 @@ impl ClPlatform {
     }
 
     #[cfg(feature = "CL_VERSION_1_1")]
-    pub fn get_all() -> Result<Vec<Self>, PlatformError> {
+    pub fn get_all() -> Result<Vec<Self>, ClError> {
+        use crate::error::api_error::ApiError;
+
         let mut raw_pointers =
-            cl3::platform::get_platform_ids().map_err(PlatformError::GetIdError)?;
+            cl3::platform::get_platform_ids().map_err(|code| ClError::Api(ApiError::get_error(code)))?;
         Ok(raw_pointers.iter_mut().map(|p| Self::new(*p)).collect())
     }
 
     #[cfg(feature = "CL_VERSION_1_1")]
-    pub fn default() -> Result<Self, PlatformError> {
+    pub fn default() -> Result<Self, ClError> {
         let platforms = Self::get_all()?;
         let mut min_version = 0;
         let mut platform: Option<Self> = None;
@@ -36,7 +41,8 @@ impl ClPlatform {
                 platform = Some(p);
             }
         }
-        platform.ok_or(PlatformError::CouldNotFindPlatform)
+        
+        platform.ok_or(ClError::Wrapper(crate::error::wrapper_error::WrapperError::DefaultPlatformNotFound))
     }
 
     #[cfg(feature = "CL_VERSION_1_1")]
@@ -90,47 +96,47 @@ impl ClPlatform {
     ),);
 
     #[cfg(feature = "CL_VERSION_1_1")]
-    pub fn get_all_devices(&self) -> Result<Vec<ClDevice>, PlatformError> {
-        let raw_devices = cl3::device::get_device_ids(self.value, cl3::device::CL_DEVICE_TYPE_ALL)
-            .map_err(PlatformError::CouldNotGetDevice)?;
+    pub fn get_all_devices(&self) -> Result<Vec<ClDevice>, ClError> {
+        let raw_devices: Vec<*mut std::ffi::c_void> = cl3::device::get_device_ids(self.value, cl3::device::CL_DEVICE_TYPE_ALL)
+            .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
         Ok(raw_devices.iter().map(|dev| ClDevice::new(*dev)).collect())
     }
 
     #[cfg(feature = "CL_VERSION_1_1")]
-    pub fn get_gpu_devices(&self) -> Result<Vec<ClDevice>, PlatformError> {
+    pub fn get_gpu_devices(&self) -> Result<Vec<ClDevice>, ClError> {
         let raw_devices = cl3::device::get_device_ids(self.value, cl3::device::CL_DEVICE_TYPE_GPU)
-            .map_err(PlatformError::CouldNotGetDevice)?;
+            .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
         Ok(raw_devices.iter().map(|dev| ClDevice::new(*dev)).collect())
     }
 
     #[cfg(feature = "CL_VERSION_1_1")]
-    pub fn get_cpu_devices(&self) -> Result<Vec<ClDevice>, PlatformError> {
+    pub fn get_cpu_devices(&self) -> Result<Vec<ClDevice>, ClError> {
         let raw_devices = cl3::device::get_device_ids(self.value, cl3::device::CL_DEVICE_TYPE_CPU)
-            .map_err(PlatformError::CouldNotGetDevice)?;
+            .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
         Ok(raw_devices.iter().map(|dev| ClDevice::new(*dev)).collect())
     }
 
     #[cfg(feature = "CL_VERSION_1_2")]
-    pub fn get_custom_devices(&self) -> Result<Vec<ClDevice>, PlatformError> {
+    pub fn get_custom_devices(&self) -> Result<Vec<ClDevice>, ClError> {
         let raw_devices =
             cl3::device::get_device_ids(self.value, cl3::device::CL_DEVICE_TYPE_CUSTOM)
-                .map_err(PlatformError::CouldNotGetDevice)?;
+                .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
         Ok(raw_devices.iter().map(|dev| ClDevice::new(*dev)).collect())
     }
 
     #[cfg(feature = "CL_VERSION_1_1")]
-    pub fn get_accelerator_devices(&self) -> Result<Vec<ClDevice>, PlatformError> {
+    pub fn get_accelerator_devices(&self) -> Result<Vec<ClDevice>, ClError> {
         let raw_devices =
             cl3::device::get_device_ids(self.value, cl3::device::CL_DEVICE_TYPE_ACCELERATOR)
-                .map_err(PlatformError::CouldNotGetDevice)?;
+                .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
         Ok(raw_devices.iter().map(|dev| ClDevice::new(*dev)).collect())
     }
 
     #[cfg(feature = "CL_VERSION_1_1")]
-    pub fn get_default_devices(&self) -> Result<Vec<ClDevice>, PlatformError> {
+    pub fn get_default_devices(&self) -> Result<Vec<ClDevice>, ClError> {
         let raw_devices =
             cl3::device::get_device_ids(self.value, cl3::device::CL_DEVICE_TYPE_DEFAULT)
-                .map_err(PlatformError::CouldNotGetDevice)?;
+                .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
         Ok(raw_devices.iter().map(|dev| ClDevice::new(*dev)).collect())
     }
 

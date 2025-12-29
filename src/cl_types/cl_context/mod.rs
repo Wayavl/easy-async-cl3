@@ -2,10 +2,10 @@ use core::fmt;
 use std::{os::raw::c_void, ptr::null};
 
 #[cfg(feature = "CL_VERSION_1_1")]
-use crate::cl_types::cl_device::ClDevice;
-use crate::{cl_context_generate_getters, cl_types::{cl_platform::ClPlatform, releaseable::Releaseable}, error::cl_context::ContextError};
+use crate::{cl_types::cl_device::ClDevice, error::ClError};
+use crate::{cl_context_generate_getters, cl_types::{cl_platform::ClPlatform, releaseable::Releaseable}};
 use std::ptr::null_mut;
-
+use crate::error::api_error::ApiError;
 #[derive(Debug)]
 pub struct ClContext {
     value: *mut c_void,
@@ -21,21 +21,23 @@ impl ClContext {
     } 
 
     #[cfg(feature = "CL_VERSION_1_1")]
-    pub fn new(device_list: &Vec<ClDevice>) -> Result<Self, ContextError> {
+    pub fn new(device_list: &Vec<ClDevice>) -> Result<Self, ClError> {
+        
+
         let device_raw_ids: Vec<*mut c_void> = device_list
             .iter()
             .map(|device| device.as_ptr())
             .collect();
         let raw_context =
             cl3::context::create_context(&device_raw_ids, null_mut(), None, null_mut())
-                .map_err(|e| ContextError::ErrorCreatingContext(e))?;
+                .map_err(|e| ClError::Api(ApiError::get_error(e)))?;
         Ok(Self::from_ptr(raw_context))
     }
 
     pub fn new_from_device_type(
         platform: &ClPlatform,
         device_type: u64,
-    ) -> Result<Self, ContextError> {
+    ) -> Result<Self, ClError> {
         let properties = vec![
             cl3::context::CL_CONTEXT_PLATFORM,
             platform.as_ptr() as isize,
@@ -47,7 +49,7 @@ impl ClContext {
             None,
             null_mut(),
         )
-        .map_err(|err| ContextError::ErrorCreatingContext(err))?;
+        .map_err(|err| ClError::Api(ApiError::get_error(err)))?;
         Ok(ClContext::from_ptr(raw_context))
     }
 

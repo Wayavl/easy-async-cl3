@@ -10,28 +10,20 @@ pub fn add(left: u64, right: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use std::mem::take;
-
-    use cl3::ext::cl_command_queue_properties;
-
     use crate::{
         cl_types::{
             cl_command_queue::{
                 ClCommandQueue,
-                command_queue_parameters::{self, CommandQueueProperties, Version10, Version20},
+                command_queue_parameters::{CommandQueueProperties, Version10, Version20},
             },
             cl_context::ClContext,
-            cl_device::{ClDevice, device_type::ALL},
+            cl_device::{device_type::ALL},
             cl_platform::ClPlatform,
-        },
-        error::{
-            cl_command_queue::CommandQueueError, cl_context::ContextError, cl_device::DeviceError,
-            cl_platform::PlatformError,
-        },
+        }, error::ClError,
     };
 
     #[test]
-    fn cl_platform_test() -> Result<(), PlatformError> {
+    fn cl_platform_test() -> Result<(), ClError> {
         println!("All platforms: ");
         let get_all_paltforms = ClPlatform::get_all()?;
         get_all_paltforms.iter().for_each(|f| print!("{}\n", f));
@@ -53,7 +45,7 @@ mod tests {
     }
 
     #[test]
-    fn cl_device_test() -> Result<(), DeviceError> {
+    fn cl_device_test() -> Result<(), ClError> {
         let platforms = ClPlatform::get_all().unwrap();
 
         for platform in platforms {
@@ -102,7 +94,7 @@ mod tests {
     }
 
     #[test]
-    fn cl_sub_device_test() -> Result<(), DeviceError> {
+    fn cl_sub_device_test() -> Result<(), ClError> {
         let default_platform = ClPlatform::default().unwrap();
         let all_devices = default_platform.get_all_devices().unwrap();
 
@@ -140,7 +132,7 @@ mod tests {
     }
 
     #[test]
-    fn cl_context_test() -> Result<(), ContextError> {
+    fn cl_context_test() -> Result<(), ClError> {
         let platform = ClPlatform::default().unwrap();
         let context_from_device_type = ClContext::new_from_device_type(&platform, ALL)?;
         let devices = platform.get_all_devices().unwrap();
@@ -173,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn cl_command_queue_test() -> Result<(), CommandQueueError> {
+    fn cl_command_queue_test() -> Result<(), ClError> {
         
         let platform = ClPlatform::default().unwrap();
         let devices= platform.get_cpu_devices().unwrap();
@@ -199,6 +191,17 @@ mod tests {
             println!("  Reference Count: {}", queue.get_reference_count().unwrap());
             println!("  Queue Size: {}", queue.get_queue_size().unwrap_or_default())
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn program_test() -> Result<(), ClError> {
+        let platform  = ClPlatform::default()?;
+        let devices_list = platform.get_all_devices()?;
+        let device = devices_list.first().unwrap();
+        let subdevice = device.create_subdevice_equally(4)?;
+        let context = ClContext::new(&subdevice)?;
 
         Ok(())
     }

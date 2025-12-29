@@ -7,16 +7,16 @@ macro_rules! cl_platform_generate_getters {
     ) => {
         $(
             pub fn $name(&self)
-                -> Result<$type_of, $crate::error::cl_platform::PlatformError>
+                -> Result<$type_of, $crate::error::ClError>
             where
                 $type_of: $crate::cl_types::formatter::Formatter,
             {
                 // Obtiene el buffer desde OpenCL
                 let buffer = cl3::platform::get_platform_data(self.value, $value_id)
-                    .map_err(crate::error::cl_platform::PlatformError::GetDataError)?;
+                    .map_err(|code| crate::error::ClError::Api(crate::error::api_error::ApiError::get_error(code)))?;
 
                 // Usa from_buffer que ahora devuelve Option<Self>
-                <$type_of as $crate::cl_types::formatter::Formatter>::from_buffer(&buffer).ok_or_else(|| crate::error::cl_platform::PlatformError::FailedToFormat)
+                <$type_of as $crate::cl_types::formatter::Formatter>::from_buffer(&buffer).ok_or_else(|| crate::error::ClError::Wrapper(crate::error::wrapper_error::WrapperError::FormatterFailed))
             }
         )*
     };
@@ -31,16 +31,16 @@ macro_rules! cl_device_generate_getters {
     ) => {
         $(
             pub fn $name(&self)
-                -> Result<$type_of, $crate::error::cl_device::DeviceError>
+                -> Result<$type_of, $crate::error::ClError>
             where
                 $type_of: $crate::cl_types::formatter::Formatter,
             {
                 // Obtiene el buffer desde OpenCL
                 let buffer = cl3::device::get_device_data(self.value, $value_id)
-                    .map_err(crate::error::cl_device::DeviceError::GetDataError)?;
+                    .map_err(|code| crate::error::ClError::Api(crate::error::api_error::ApiError::get_error(code)))?;
 
                 // Usa from_buffer que ahora devuelve Option<Self>
-                <$type_of as $crate::cl_types::formatter::Formatter>::from_buffer(&buffer).ok_or_else(|| crate::error::cl_device::DeviceError::FailedToFormat)
+                <$type_of as $crate::cl_types::formatter::Formatter>::from_buffer(&buffer).ok_or_else(|| crate::error::ClError::Wrapper(crate::error::wrapper_error::WrapperError::FormatterFailed))
             }
         )*
     };
@@ -55,16 +55,16 @@ macro_rules! cl_context_generate_getters {
     ) => {
         $(
             pub fn $name(&self)
-                -> Result<$type_of, $crate::error::cl_context::ContextError>
+                -> Result<$type_of, $crate::error::ClError>
             where
                 $type_of: $crate::cl_types::formatter::Formatter,
             {
                 // Obtiene el buffer desde OpenCL
                 let buffer = cl3::context::get_context_data(self.value, $value_id)
-                    .map_err(crate::error::cl_context::ContextError::GetDataError)?;
+                    .map_err(|code| crate::error::ClError::Api(crate::error::api_error::ApiError::get_error(code)))?;
 
                 // Usa from_buffer que ahora devuelve Option<Self>
-                <$type_of as $crate::cl_types::formatter::Formatter>::from_buffer(&buffer).ok_or_else(|| crate::error::cl_context::ContextError::FailedToFormat)
+                <$type_of as $crate::cl_types::formatter::Formatter>::from_buffer(&buffer).ok_or_else(|| crate::error::ClError::Wrapper(crate::error::wrapper_error::WrapperError::FormatterFailed))
             }
         )*
     };
@@ -79,17 +79,17 @@ macro_rules! cl_command_queue_generate_getters {
     ) => {
         $(
             pub fn $name(&self)
-                -> Result<$type_of, $crate::error::cl_command_queue::CommandQueueError>
+                -> Result<$type_of, $crate::error::ClError>
             where
                 $type_of: $crate::cl_types::formatter::Formatter,
             {
                 // Obtiene el buffer desde OpenCL
                 let buffer = cl3::command_queue::get_command_queue_data(self.value, $value_id)
-                    .map_err(crate::error::cl_command_queue::CommandQueueError::QueryDataError)?;
+                    .map_err(|code| crate::error::ClError::Api(crate::error::api_error::ApiError::get_error(code)))?;
 
                 // Usa from_buffer que ahora devuelve Option<Self>
                 <$type_of as $crate::cl_types::formatter::Formatter>::from_buffer(&buffer)
-                    .ok_or_else(|| crate::error::cl_command_queue::CommandQueueError::FailedToFormat)
+                    .ok_or_else(|| crate::error::ClError::Wrapper(crate::error::wrapper_error::WrapperError::FormatterFailed))
             }
         )*
     };

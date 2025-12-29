@@ -1,9 +1,13 @@
 pub mod device_type;
 use std::os::raw::c_void;
 
+#[cfg(feature = "CL_VERSION_1_2")]
+use crate::error::ClError;
 use crate::{
-    cl_device_generate_getters, cl_types::releaseable::Releaseable, error::cl_device::DeviceError,
+    cl_device_generate_getters, cl_types::releaseable::Releaseable
 };
+use crate::error::api_error::ApiError;
+
 
 #[derive(Debug, Default)]
 pub struct ClDevice {
@@ -20,9 +24,11 @@ impl ClDevice {
     }
 
     #[cfg(feature = "CL_VERSION_1_2")]
-    pub fn create_subdevice_equally(&self, units: isize) -> Result<Vec<Self>, DeviceError> {
+    pub fn create_subdevice_equally(&self, units: isize) -> Result<Vec<Self>, ClError> {
+        
+
         if self.get_partition_max_sub_devices()? <= 0 {
-            return Err(DeviceError::SubdeviceNotAvailable);
+            return Err(ClError::Wrapper(crate::error::wrapper_error::WrapperError::SubdeviceNotAvailableForThisDevice));
         }
 
         let properties = vec![
@@ -31,7 +37,7 @@ impl ClDevice {
             0,
         ];
         let raw_subdevice_array = cl3::device::create_sub_devices(self.value, &properties)
-            .map_err(DeviceError::CouldNotDivideDevice)?;
+            .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
 
         Ok(raw_subdevice_array
             .iter()
@@ -43,9 +49,9 @@ impl ClDevice {
     pub fn create_subdevice_by_count(
         &self,
         units: &mut Vec<isize>,
-    ) -> Result<Vec<Self>, DeviceError> {
+    ) -> Result<Vec<Self>, ClError> {
         if self.get_partition_max_sub_devices()? <= 0 {
-            return Err(DeviceError::SubdeviceNotAvailable);
+            return Err(ClError::Wrapper(crate::error::wrapper_error::WrapperError::SubdeviceNotAvailableForThisDevice));
         }
 
         let mut properties = vec![cl3::device::CL_DEVICE_PARTITION_BY_COUNTS];
@@ -53,7 +59,7 @@ impl ClDevice {
         properties.push(cl3::device::CL_DEVICE_PARTITION_BY_COUNTS_LIST_END);
 
         let raw_subdevice_array = cl3::device::create_sub_devices(self.value, &properties)
-            .map_err(DeviceError::CouldNotDivideDevice)?;
+            .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
         Ok(raw_subdevice_array
             .iter()
             .map(|sub| {
