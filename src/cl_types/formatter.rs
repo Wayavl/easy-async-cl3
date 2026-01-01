@@ -1,6 +1,8 @@
 use std::os::raw::c_void;
 
-use crate::cl_types::{cl_context::ClContext, cl_device::ClDevice, releaseable::Releaseable};
+use crate::cl_types::{
+    cl_context::ClContext, cl_device::{ClDevice, svm_capabilities::SvmCapabilities}, cl_kernel::ClKernel, cl_program::{Builded, ClProgram, NotBuilded, program_binary_type::ProgramBinaryType, program_build_status::ProgramBuildStatus}, releaseable::Releaseable
+};
 
 pub trait Formatter: Sized {
     /// Converts a byte buffer into Self
@@ -24,14 +26,12 @@ macro_rules! impl_from_le_bytes {
     };
 }
 
-
 impl_from_le_bytes!(f32, 4);
 impl_from_le_bytes!(f64, 8);
 impl_from_le_bytes!(i32, 4);
 impl_from_le_bytes!(u32, 4);
 impl_from_le_bytes!(i64, 8);
 impl_from_le_bytes!(u64, 8);
-
 
 impl Formatter for bool {
     fn from_buffer(buffer: &[u8]) -> Option<Self> {
@@ -73,6 +73,12 @@ impl Formatter for Vec<usize> {
     }
 }
 
+impl Formatter for Vec<u8> {
+    fn from_buffer(buffer: &[u8]) -> Option<Self> {
+        Some(buffer.to_vec())
+    }
+}
+
 impl Formatter for Vec<*mut std::os::raw::c_void> {
     fn from_buffer(buffer: &[u8]) -> Option<Self> {
         if buffer.len() % std::mem::size_of::<*mut std::os::raw::c_void>() != 0 {
@@ -82,15 +88,14 @@ impl Formatter for Vec<*mut std::os::raw::c_void> {
         for chunk in buffer.chunks_exact(std::mem::size_of::<*mut std::os::raw::c_void>()) {
             let mut bytes = vec![0u8; std::mem::size_of::<*mut std::os::raw::c_void>()];
             bytes.copy_from_slice(chunk);
-            let arr: [u8; std::mem::size_of::<*mut std::os::raw::c_void>()] = bytes.try_into().ok()?;
+            let arr: [u8; std::mem::size_of::<*mut std::os::raw::c_void>()] =
+                bytes.try_into().ok()?;
             let ptr = usize::from_le_bytes(arr) as *mut std::os::raw::c_void;
             result.push(ptr);
         }
         Some(result)
     }
 }
-
-
 
 impl Formatter for Vec<isize> {
     fn from_buffer(buffer: &[u8]) -> Option<Self> {
@@ -108,8 +113,6 @@ impl Formatter for Vec<isize> {
     }
 }
 
-
-
 impl Formatter for Vec<u64> {
     fn from_buffer(buffer: &[u8]) -> Option<Self> {
         if buffer.len() % std::mem::size_of::<u64>() != 0 {
@@ -125,11 +128,6 @@ impl Formatter for Vec<u64> {
         Some(result)
     }
 }
-
-
-
-
-
 
 // Releaseables
 impl Formatter for ClContext {
@@ -170,5 +168,77 @@ impl Formatter for Vec<ClDevice> {
             result.push(device);
         }
         Some(result)
+    }
+}
+
+impl Formatter for ProgramBuildStatus {
+    fn from_buffer(buffer: &[u8]) -> Option<Self> {
+        if buffer.len() != 4 {
+            return None;
+        }
+        let mut bytes = [0u8; 4];
+        bytes.copy_from_slice(buffer);
+        let number  = i32::from_le_bytes(bytes);
+        Some(ProgramBuildStatus::from(number))
+    }
+}
+
+impl Formatter for ProgramBinaryType {
+    fn from_buffer(buffer: &[u8]) -> Option<Self> {
+        if buffer.len() != 4 {
+            return None;
+        }
+        let mut bytes = [0u8; 4];
+        bytes.copy_from_slice(buffer);
+        let number  = u32::from_le_bytes(bytes);
+        Some(ProgramBinaryType::from(number))
+    }
+}
+
+impl Formatter for ClKernel {
+    fn from_buffer(buffer: &[u8]) -> Option<Self> {
+        if buffer.len() != std::mem::size_of::<*mut c_void>() {
+            return None;
+        }
+        let ptr = unsafe { std::ptr::read_unaligned(buffer.as_ptr() as *const *mut c_void) };
+        let kernel = ClKernel::from_ptr(ptr);
+        unsafe { kernel.increase_reference_count() };
+        Some(kernel)
+    }
+}
+
+impl Formatter for ClProgram<Builded> {
+    fn from_buffer(buffer: &[u8]) -> Option<Self> {
+        if buffer.len() != std::mem::size_of::<*mut c_void>() {
+            return None;
+        }
+        let ptr = unsafe { std::ptr::read_unaligned(buffer.as_ptr() as *const *mut c_void) };
+        let program = ClProgram::<Builded>::from_ptr(ptr);
+        unsafe { program.increase_reference_count() };
+        Some(program)
+    }
+}
+
+impl Formatter for ClProgram<NotBuilded> {
+    fn from_buffer(buffer: &[u8]) -> Option<Self> {
+        if buffer.len() != std::mem::size_of::<*mut c_void>() {
+            return None;
+        }
+        let ptr = unsafe { std::ptr::read_unaligned(buffer.as_ptr() as *const *mut c_void) };
+        let program = ClProgram::<NotBuilded>::from_ptr(ptr);
+        unsafe { program.increase_reference_count() };
+        Some(program)
+    }
+}
+
+impl Formatter for SvmCapabilities {
+    fn from_buffer(buffer: &[u8]) -> Option<Self> {
+        if buffer.len() != 8 {
+            return None;
+        }
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(buffer);
+        let number  = u64::from_le_bytes(bytes);
+        Some(SvmCapabilities::from(number))
     }
 }

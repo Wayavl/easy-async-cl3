@@ -1,6 +1,9 @@
 pub mod device_type;
+pub mod svm_capabilities;
 use std::os::raw::c_void;
 
+#[cfg(feature = "CL_VERSION_2_0")]
+use crate::cl_types::cl_device::svm_capabilities::SvmCapabilities;
 #[cfg(feature = "CL_VERSION_1_2")]
 use crate::error::ClError;
 use crate::{
@@ -442,7 +445,7 @@ impl ClDevice {
         ),
         (
             get_svm_capabilities,
-            u32,
+            SvmCapabilities,
             cl3::device::CL_DEVICE_SVM_CAPABILITIES
         ),
         (

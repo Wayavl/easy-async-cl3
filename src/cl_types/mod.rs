@@ -6,3 +6,8 @@ pub mod macros;
 pub mod cl_command_queue;
 pub mod releaseable;
 pub mod cl_program;
+pub mod cl_kernel;
+pub mod cl_event;
+pub mod cl_buffer;
+pub mod buffer_flags;
+pub mod cl_svm_buffer;

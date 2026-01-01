@@ -10,16 +10,27 @@ pub fn add(left: u64, right: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use core::time;
+    use std::{ffi::c_void, fs::File, io::Write, thread::sleep};
+
+    use cl3::platform;
+
     use crate::{
         cl_types::{
+            buffer_flags::MemoryFlags,
+            cl_buffer::ClBuffer,
             cl_command_queue::{
                 ClCommandQueue,
                 command_queue_parameters::{CommandQueueProperties, Version10, Version20},
             },
             cl_context::ClContext,
-            cl_device::{device_type::ALL},
+            cl_device::device_type::ALL,
+            cl_kernel::ClKernel,
             cl_platform::ClPlatform,
-        }, error::ClError,
+            cl_program::{ClProgram, NotBuilded, program_parameters::ProgramParameters},
+            cl_svm_buffer::ClSvmBuffer,
+        },
+        error::{ClError, api_error::ApiError, wrapper_error::WrapperError},
     };
 
     #[test]
@@ -166,9 +177,8 @@ mod tests {
 
     #[test]
     fn cl_command_queue_test() -> Result<(), ClError> {
-        
         let platform = ClPlatform::default().unwrap();
-        let devices= platform.get_cpu_devices().unwrap();
+        let devices = platform.get_cpu_devices().unwrap();
         let cpu = devices[0].clone();
         let sub_devices = cpu.create_subdevice_equally(4).unwrap();
         let context = ClContext::new(&sub_devices).unwrap();
@@ -176,20 +186,32 @@ mod tests {
 
         let mut command_queue: Vec<ClCommandQueue> = Vec::new();
 
-
         let properties = command_queue_parameters.get_properties();
         for device in &sub_devices {
-            let queue = ClCommandQueue::create_command_queue_with_properties(&context, &device, &properties)?;
+            let queue = ClCommandQueue::create_command_queue_with_properties(
+                &context,
+                &device,
+                &properties,
+            )?;
             command_queue.push(queue);
         }
 
-        for queue in  command_queue {
+        for queue in command_queue {
             println!("Queue X");
             println!("  Context: {}", queue.get_context().unwrap());
             println!("  Device: {}", queue.get_device().unwrap());
-            println!("      Device refence count: {}", queue.get_device().unwrap().get_reference_count().unwrap());
-            println!("  Reference Count: {}", queue.get_reference_count().unwrap());
-            println!("  Queue Size: {}", queue.get_queue_size().unwrap_or_default())
+            println!(
+                "      Device refence count: {}",
+                queue.get_device().unwrap().get_reference_count().unwrap()
+            );
+            println!(
+                "  Reference Count: {}",
+                queue.get_reference_count().unwrap()
+            );
+            println!(
+                "  Queue Size: {}",
+                queue.get_queue_size().unwrap_or_default()
+            )
         }
 
         Ok(())
@@ -197,11 +219,193 @@ mod tests {
 
     #[test]
     fn program_test() -> Result<(), ClError> {
-        let platform  = ClPlatform::default()?;
+        let platform = ClPlatform::default()?;
         let devices_list = platform.get_all_devices()?;
         let device = devices_list.first().unwrap();
         let subdevice = device.create_subdevice_equally(4)?;
         let context = ClContext::new(&subdevice)?;
+        let program_source = std::fs::read_to_string("./tests/program1test/add.cl").unwrap();
+        let unbuilded_program = ClProgram::<NotBuilded>::from_src(&context, program_source)?;
+
+        println!("Source: {}", unbuilded_program.get_source()?);
+        println!("Num Devices: {}", unbuilded_program.get_num_devices()?);
+
+        let build_options = ProgramParameters::default();
+        let build_options = build_options.get_parameters();
+        let builded_program = unbuilded_program.build(&build_options, &subdevice)?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn launch_kernel_without_svm() -> Result<(), ClError> {
+        // --- Plataforma y dispositivos ---
+        let platform = ClPlatform::default()?;
+        let devices_list = platform.get_all_devices()?;
+        let device = devices_list.first().unwrap();
+        let device = device.create_subdevice_equally(4)?;
+        let context = ClContext::new(&device)?;
+
+        // --- Programa OpenCL ---
+        let program_source = std::fs::read_to_string("./tests/program1test/add.cl").unwrap();
+        let unbuilded_program = ClProgram::<NotBuilded>::from_src(&context, program_source)?;
+
+        println!("Source: {}", unbuilded_program.get_source()?);
+        println!("Num Devices: {}", unbuilded_program.get_num_devices()?);
+
+        let build_options = ProgramParameters::default().get_parameters();
+        let builded_program = match unbuilded_program.build(&build_options, &device) {
+            Ok(v) => v,
+            Err(_) => {
+                eprintln!("Program build error:");
+                for dev in &device {
+                    let log = unbuilded_program.get_logs(dev)?;
+                    eprintln!("Device log:\n{}", log);
+                }
+                panic!();
+            }
+        };
+
+        // --- Kernel ---
+        let kernel = ClKernel::new(&builded_program, "add")?;
+
+        // --- Command queue ---
+        let queue_properties = CommandQueueProperties::<Version20>::new()
+            .set_cl_queue_properties(true, true, false, false);
+        let queue = ClCommandQueue::create_command_queue_with_properties(
+            &context,
+            &device.first().unwrap(),
+            &queue_properties.get_properties(),
+        )?;
+
+        // --- Buffers y datos ---
+        let size = 2048;
+        let mut sum_a: Vec<f32> = vec![1.0; size];
+        let mut sum_b: Vec<f32> = vec![2.0; size];
+
+        let buffer_a_flags = vec![MemoryFlags::ReadWrite, MemoryFlags::CopyHostPtr];
+        let buffer_b_flags = vec![MemoryFlags::ReadOnly, MemoryFlags::CopyHostPtr];
+
+        let buffer_a = ClBuffer::new(
+            &context,
+            &buffer_a_flags,
+            size * size_of::<f32>(),
+            sum_a.as_mut_ptr() as *mut c_void,
+        )?;
+
+        let buffer_b = ClBuffer::new(
+            &context,
+            &buffer_b_flags,
+            size * size_of::<f32>(),
+            sum_b.as_mut_ptr() as *mut c_void,
+        )?;
+
+        // --- Setear argumentos del kernel ---
+        unsafe {
+            kernel.setArgs(0, size_of::<*mut c_void>(), buffer_a.as_ptr())?;
+            kernel.setArgs(1, size_of::<*mut c_void>(), buffer_b.as_ptr())?;
+        }
+
+        // --- Ejecutar kernel ---
+        let event = queue
+            .enqueue_nd_range_kernel(&kernel, 1, vec![0], vec![size], vec![64], None, None)
+            .await?;
+
+        // --- Leer resultados ---
+        queue
+            .enqueue_read_buffer(&buffer_a, None, &mut sum_a, None)
+            .await?;
+
+        println!("Primeros 10 resultados: {:?}", &sum_a[..10]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn launch_kernel_with_svm() -> Result<(), ClError> {
+        // --- Plataforma y dispositivos ---
+        let platforms = ClPlatform::get_all()?;
+        let binding = ClPlatform::default()?;
+        let platform = platforms.first().unwrap_or(&binding);
+        let devices_list = platform.get_all_devices()?;
+        let device = devices_list.first().unwrap();
+        println!("Device capabilities: {}", device.get_svm_capabilities()?);
+
+        let context = ClContext::new(&devices_list)?;
+
+        // --- Programa OpenCL ---
+        let program_source = std::fs::read_to_string("./tests/program2testsvm/add.cl").unwrap();
+        let unbuilded_program = ClProgram::<NotBuilded>::from_src(&context, program_source)?;
+
+        println!("Source: {}", unbuilded_program.get_source()?);
+        println!("Num Devices: {}", unbuilded_program.get_num_devices()?);
+
+        let build_options = ProgramParameters::new().version("CL2.0").get_parameters();
+        let builded_program = match unbuilded_program.build(&build_options, &devices_list) {
+            Ok(v) => v,
+            Err(_) => {
+                eprintln!("Program build error:");
+                for dev in &devices_list {
+                    let log = unbuilded_program.get_logs(dev)?;
+                    eprintln!("Device log:\n{}", log);
+                }
+                panic!();
+            }
+        };
+
+        // --- Kernel ---
+        let kernel = ClKernel::new(&builded_program, "add")?;
+
+        // --- Command queue ---
+        let queue_properties = CommandQueueProperties::<Version20>::new()
+            .set_cl_queue_properties(true, true, false, false);
+        let queue = ClCommandQueue::create_command_queue_with_properties(
+            &context,
+            &device,
+            &queue_properties.get_properties(),
+        )?;
+
+        // --- Buffers y datos ---
+        let data_size = 1024;
+        let byte_size_of = size_of::<f32>();
+        let mut svm_a = ClSvmBuffer::<f32>::new(
+            &context,
+            &vec![MemoryFlags::ReadWrite],
+            data_size,
+            0,
+        )?;
+
+        let mut svm_b = ClSvmBuffer::<f32>::new(
+            &context,
+            &vec![MemoryFlags::ReadWrite],
+            data_size,
+            0,
+        )?;
+
+        {
+            let mut svm_a_lock = svm_a.map_mut(&queue, &vec![MemoryFlags::WriteOnly])?;
+            let mut svm_b_lock = svm_b.map_mut(&queue, &vec![MemoryFlags::WriteOnly])?;
+            for i in 0..data_size {
+                svm_a_lock[i] = i as f32;
+                svm_b_lock[i] = 1.0;
+            }
+        }
+        // --- Setear argumentos del kernel ---
+        unsafe {
+            kernel.setSvmArg(0, svm_a.len, svm_a.as_ptr())?;
+            kernel.setSvmArg(1, svm_b.len, svm_b.as_ptr())?;
+        }
+
+        // --- Ejecutar kernel ---
+        let event = queue
+            .enqueue_nd_range_kernel(&kernel, 1, vec![0], vec![data_size], vec![64], None, None)
+            .await?;
+
+        // --- Leer resultados ---
+        {
+            let svm_a_lock = svm_a.map_mut(&queue, &vec![MemoryFlags::ReadOnly])?;
+            println!("Primeros 10 resultados: {:?}", &svm_a_lock[..10]);
+        }
+        
 
         Ok(())
     }

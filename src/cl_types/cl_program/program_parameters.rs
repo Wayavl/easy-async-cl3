@@ -3,7 +3,7 @@ pub struct ProgramParameters {
 }
 
 impl ProgramParameters {
-    pub fn get_parameters(&mut self) -> String {
+    pub fn get_parameters(&self) -> String {
         self.parameters.clone()
     }
 
@@ -18,12 +18,18 @@ impl ProgramParameters {
         self.parameters.push_str(version);
         self
     }
+
+    pub fn new() -> Self {
+        Self { 
+            parameters: String::new()
+        }
+    }
 }
 
 impl Default for ProgramParameters {
     fn default() -> Self {
         Self {
-            parameters: String::new()
+            parameters: String::from("")
         }
     }
 }
