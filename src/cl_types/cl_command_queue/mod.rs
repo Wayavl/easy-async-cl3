@@ -3,7 +3,7 @@ use std::os::raw::c_void;
 use std::ptr::null;
 
 use crate::cl_types::cl_buffer::ClBuffer;
-#[cfg(feature = "CL_VERSION_1_1")]
+use crate::cl_types::cl_image::ClImage;
 use crate::error::ClError;
 use crate::error::api_error::ApiError;
 use crate::{
@@ -103,9 +103,10 @@ impl ClCommandQueue {
                 } else {
                     std::ptr::null()
                 },
-            ).map_err(|code| ClError::Api(ApiError::get_error(code)))?
+            )
+            .map_err(|code| ClError::Api(ApiError::get_error(code)))?
         });
-        
+
         event.event_future().await;
 
         Ok(event)
@@ -158,6 +159,104 @@ impl ClCommandQueue {
         };
 
         event.event_future().await;
+        Ok(())
+    }
+
+    pub async fn read_image(
+        &self,
+        image: ClImage,
+        origin: Vec<usize>,
+        region: Vec<usize>,
+        row_pitch: usize,
+        slice_pitch: usize,
+        buffer: *mut c_void,
+        event_wait_list: Option<Vec<ClEvent>>,
+    ) -> Result<(), ClError> {
+        let raw = unsafe {
+            match event_wait_list {
+                Some(v) => {
+                    let unwrapped_events: Vec<*mut c_void> = v.iter().map(|f| f.as_ptr()).collect();
+                    cl3::command_queue::enqueue_read_image(
+                        self.as_ptr(),
+                        image.as_ptr(),
+                        0,
+                        origin.as_ptr(),
+                        region.as_ptr(),
+                        row_pitch,
+                        slice_pitch,
+                        buffer,
+                        unwrapped_events.len() as u32,
+                        unwrapped_events.as_ptr(),
+                    )
+                }
+                None => cl3::command_queue::enqueue_read_image(
+                    self.as_ptr(),
+                    image.as_ptr(),
+                    0,
+                    origin.as_ptr(),
+                    region.as_ptr(),
+                    row_pitch,
+                    slice_pitch,
+                    buffer,
+                    0,
+                    null(),
+                ),
+            }
+        }
+        .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
+
+        let wrapped_event = ClEvent::from_ptr(raw);
+        wrapped_event.event_future().await;
+
+        Ok(())
+    }
+
+    pub async fn write_image(
+        &self,
+        image: ClImage,
+        origin: Vec<usize>,
+        region: Vec<usize>,
+        row_pitch: usize,
+        slice_pitch: usize,
+        buffer: *mut c_void,
+        event_wait_list: Option<Vec<ClEvent>>,
+    ) -> Result<(), ClError> {
+        let raw = unsafe {
+            match event_wait_list {
+                Some(v) => {
+                    let unwrapped_events: Vec<*mut c_void> = v.iter().map(|f| f.as_ptr()).collect();
+                    cl3::command_queue::enqueue_write_image(
+                        self.as_ptr(),
+                        image.as_ptr(),
+                        0,
+                        origin.as_ptr(),
+                        region.as_ptr(),
+                        row_pitch,
+                        slice_pitch,
+                        buffer,
+                        unwrapped_events.len() as u32,
+                        unwrapped_events.as_ptr(),
+                    )
+                }
+                None => cl3::command_queue::enqueue_read_image(
+                    self.as_ptr(),
+                    image.as_ptr(),
+                    0,
+                    origin.as_ptr(),
+                    region.as_ptr(),
+                    row_pitch,
+                    slice_pitch,
+                    buffer,
+                    0,
+                    null(),
+                ),
+            }
+        }
+        .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
+
+        let wrapped_event = ClEvent::from_ptr(raw);
+        wrapped_event.event_future().await;
+
         Ok(())
     }
 

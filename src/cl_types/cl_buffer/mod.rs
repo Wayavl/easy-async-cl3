@@ -1,7 +1,7 @@
 use std::os::raw::c_void;
 
 use crate::{
-    cl_types::{buffer_flags::MemoryFlags, cl_context::ClContext, releaseable::Releaseable},
+    cl_types::{memory_flags::MemoryFlags, cl_context::ClContext, releaseable::Releaseable},
     error::{ClError, api_error::ApiError},
 };
 

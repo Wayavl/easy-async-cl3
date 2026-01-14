@@ -2,7 +2,7 @@ use std::{marker::PhantomData, os::raw::c_void, ptr::null};
 
 use cl3::context;
 
-use crate::{cl_types::{buffer_flags::MemoryFlags, cl_command_queue::ClCommandQueue, cl_context::ClContext}, error::{ClError, api_error::ApiError}};
+use crate::{cl_types::{memory_flags::MemoryFlags, cl_command_queue::ClCommandQueue, cl_context::ClContext}, error::{ClError, api_error::ApiError}};
 
 pub struct ClSvmBuffer<T> {
     memory: *mut c_void,

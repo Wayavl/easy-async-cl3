@@ -11,24 +11,17 @@ pub fn add(left: u64, right: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use core::time;
-    use std::{ffi::c_void, fs::File, io::Write, thread::sleep};
+    use std::{ffi::c_void, fs::File, io::Write, process::Command, ptr::{null, null_mut}, thread::sleep};
 
     use cl3::platform;
+    use tokio::fs::read;
 
     use crate::{
         cl_types::{
-            buffer_flags::MemoryFlags,
-            cl_buffer::ClBuffer,
-            cl_command_queue::{
+            cl_buffer::ClBuffer, cl_command_queue::{
                 ClCommandQueue,
                 command_queue_parameters::{CommandQueueProperties, Version10, Version20},
-            },
-            cl_context::ClContext,
-            cl_device::device_type::ALL,
-            cl_kernel::ClKernel,
-            cl_platform::ClPlatform,
-            cl_program::{ClProgram, NotBuilded, program_parameters::ProgramParameters},
-            cl_svm_buffer::ClSvmBuffer,
+            }, cl_context::ClContext, cl_device::device_type::ALL, cl_image::{ClImage, image_desc::ClImageDesc, image_formats::ClImageFormats}, cl_kernel::ClKernel, cl_platform::ClPlatform, cl_program::{ClProgram, NotBuilded, program_parameters::ProgramParameters}, cl_svm_buffer::ClSvmBuffer, memory_flags::MemoryFlags
         },
         error::{ClError, api_error::ApiError, wrapper_error::WrapperError},
     };
@@ -301,8 +294,8 @@ mod tests {
 
         // --- Setear argumentos del kernel ---
         unsafe {
-            kernel.setArgs(0, size_of::<*mut c_void>(), buffer_a.as_ptr())?;
-            kernel.setArgs(1, size_of::<*mut c_void>(), buffer_b.as_ptr())?;
+            kernel.set_args(0, size_of::<*mut c_void>(), buffer_a.as_ptr())?;
+            kernel.set_args(1, size_of::<*mut c_void>(), buffer_b.as_ptr())?;
         }
 
         // --- Ejecutar kernel ---
@@ -367,19 +360,11 @@ mod tests {
         // --- Buffers y datos ---
         let data_size = 1024;
         let byte_size_of = size_of::<f32>();
-        let mut svm_a = ClSvmBuffer::<f32>::new(
-            &context,
-            &vec![MemoryFlags::ReadWrite],
-            data_size,
-            0,
-        )?;
+        let mut svm_a =
+            ClSvmBuffer::<f32>::new(&context, &vec![MemoryFlags::ReadWrite], data_size, 0)?;
 
-        let mut svm_b = ClSvmBuffer::<f32>::new(
-            &context,
-            &vec![MemoryFlags::ReadWrite],
-            data_size,
-            0,
-        )?;
+        let mut svm_b =
+            ClSvmBuffer::<f32>::new(&context, &vec![MemoryFlags::ReadWrite], data_size, 0)?;
 
         {
             let mut svm_a_lock = svm_a.map_mut(&queue, &vec![MemoryFlags::WriteOnly])?;
@@ -391,8 +376,8 @@ mod tests {
         }
         // --- Setear argumentos del kernel ---
         unsafe {
-            kernel.setSvmArg(0, svm_a.len, svm_a.as_ptr())?;
-            kernel.setSvmArg(1, svm_b.len, svm_b.as_ptr())?;
+            kernel.set_svm_arg(0, svm_a.len, svm_a.as_ptr())?;
+            kernel.set_svm_arg(1, svm_b.len, svm_b.as_ptr())?;
         }
 
         // --- Ejecutar kernel ---
@@ -405,7 +390,72 @@ mod tests {
             let svm_a_lock = svm_a.map_mut(&queue, &vec![MemoryFlags::ReadOnly])?;
             println!("Primeros 10 resultados: {:?}", &svm_a_lock[..10]);
         }
-        
+
+        let event = queue
+            .enqueue_nd_range_kernel(&kernel, 1, vec![0], vec![data_size], vec![64], None, None)
+            .await?;
+
+        // --- Leer resultados ---
+        {
+            let svm_a_lock = svm_a.map_mut(&queue, &vec![MemoryFlags::ReadOnly])?;
+            println!("Primeros 10 resultados: {:?}", &svm_a_lock[..10]);
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn image_test() -> Result<(), ClError> {
+        let platform_list = ClPlatform::get_all()?;
+        let platform = platform_list.get(0).unwrap();
+        let device_list = platform.get_all_devices()?;
+        let device = device_list.get(0).unwrap();
+
+        let context = ClContext::new(&device_list)?;
+
+        let command_queue_properties = CommandQueueProperties::<Version20>::new()
+            .set_cl_queue_properties(true, true, false, false);
+        let command_queue = ClCommandQueue::create_command_queue_with_properties(
+            &context,
+            device,
+            &command_queue_properties.get_properties(),
+        )?;
+
+        let program_source= read("./tests/program3imagetest/fillimage.cl").await.unwrap();
+        let program_source = String::from_utf8(program_source).unwrap();
+
+        let program = ClProgram::<NotBuilded>::from_src(&context, program_source)?;
+
+        let build_options = ProgramParameters::new();
+        let build = program.build(&build_options.get_parameters(), &device_list)?;
+
+        println!("Source: {}", build.get_source()?);
+
+        let mut host_image: Vec<u8> = vec![255; 1024 * 1024 * 4];
+        let memory_image= ClImage::new(&context, &vec![MemoryFlags::ReadWrite], &ClImageFormats {
+            image_channel_order: crate::cl_types::cl_image::image_channel_order::ClImageChannelOrder::RGBA,
+            image_channel_data_type: crate::cl_types::cl_image::image_channel_data_type::ClImageChannelType::UnormInt8,
+        }, 
+        &ClImageDesc {
+            image_type: crate::cl_types::cl_image::image_type::ClImageType::Image2D,
+            image_width: Some(1024),
+            image_height: Some(1024),
+            ..Default::default()
+        }, null_mut())?;
+
+        let kernel  = ClKernel::new(&build, "fill_image")?;
+
+        unsafe {
+            kernel.set_args(0, size_of::<*mut c_void>(), memory_image.as_ptr())?;
+        }
+
+        let _launch_event = command_queue.enqueue_nd_range_kernel(&kernel, 2, vec![0, 0], vec![1024, 1024], vec![16, 16], None, None).await?;
+
+        unsafe {
+            command_queue.read_image(memory_image, vec![0,0], vec![1024,1024], 0, 0, host_image.as_mut_ptr() as *mut _, None).await?;
+        }
+
+
+        println!("Image first 64: {:?}", &host_image[..64]);
 
         Ok(())
     }

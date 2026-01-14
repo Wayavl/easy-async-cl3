@@ -49,7 +49,7 @@ impl ClKernel {
         })
     }
 
-    pub unsafe fn setArgs(&self, index: u32, byte_size: usize, value: *const c_void) -> Result<(), ClError> {
+    pub unsafe fn set_args(&self, index: u32, byte_size: usize, value: *const c_void) -> Result<(), ClError> {
         unsafe {
             cl3::kernel::set_kernel_arg(
                 self.value, index, byte_size, &value as *const _ as *const _
@@ -59,7 +59,7 @@ impl ClKernel {
         Ok(())
     }
 
-    pub unsafe fn setSvmArg(&self, index: u32, byte_size: usize, value: *const c_void) -> Result<*const c_void, ClError> {
+    pub unsafe fn set_svm_arg(&self, index: u32, byte_size: usize, value: *const c_void) -> Result<*const c_void, ClError> {
 
         unsafe {
             cl3::kernel::set_kernel_arg_svm_pointer(self.value, index, value)

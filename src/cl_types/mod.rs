@@ -9,5 +9,6 @@ pub mod cl_program;
 pub mod cl_kernel;
 pub mod cl_event;
 pub mod cl_buffer;
-pub mod buffer_flags;
+pub mod memory_flags;
 pub mod cl_svm_buffer;
+pub mod cl_image;
