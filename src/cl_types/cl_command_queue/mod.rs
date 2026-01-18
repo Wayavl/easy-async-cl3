@@ -38,6 +38,7 @@ impl ClCommandQueue {
         note = "Use create_command_queue_with_properties instead"
     )]
 
+    #[allow(deprecated)]
     pub fn create_command_queue(
         context: &ClContext,
         device: &ClDevice,
