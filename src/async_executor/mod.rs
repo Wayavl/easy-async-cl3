@@ -109,6 +109,7 @@ impl AsyncExecutor {
                 if profiling_enabled {
                     properties |= cl3::command_queue::CL_QUEUE_PROFILING_ENABLE;
                 }
+                #[allow(deprecated)]
                 ClCommandQueue::create_command_queue(&context, device, properties)?
             };
             
@@ -171,6 +172,7 @@ impl AsyncExecutor {
                 if profiling_enabled {
                     properties |= cl3::command_queue::CL_QUEUE_PROFILING_ENABLE;
                 }
+                #[allow(deprecated)]
                 ClCommandQueue::create_command_queue(&context, device, properties)?
             };
 
