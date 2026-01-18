@@ -15,9 +15,9 @@ pub enum ClImageChannelOrder {
     RGx,
     RGBx,
     Depth,
-    sRGB,
-    sRGBx,
-    sRGBA,
+    SRgb,
+    SRgbx,
+    SRgba,
     Unknown(u32),
 }
 
@@ -39,9 +39,9 @@ impl From<u32> for ClImageChannelOrder {
             cl3::memory::CL_RGx => Self::RGx,
             cl3::memory::CL_RGBx => Self::RGBx,
             cl3::memory::CL_DEPTH => Self::Depth,
-            cl3::memory::CL_sRGB => Self::sRGB,
-            cl3::memory::CL_sRGBx => Self::sRGBx,
-            cl3::memory::CL_sRGBA => Self::sRGBA,
+            cl3::memory::CL_sRGB => Self::SRgb,
+            cl3::memory::CL_sRGBx => Self::SRgbx,
+            cl3::memory::CL_sRGBA => Self::SRgba,
             other => Self::Unknown(other),
         }
     }
@@ -66,11 +66,10 @@ fn into(self) -> u32 {
             ClImageChannelOrder::RGx => cl3::memory::CL_RGx,
             ClImageChannelOrder::RGBx => cl3::memory::CL_RGBx,
             ClImageChannelOrder::Depth => cl3::memory::CL_DEPTH,
-            ClImageChannelOrder::sRGB => cl3::memory::CL_sRGB,
-            ClImageChannelOrder::sRGBx => cl3::memory::CL_sRGBx,
-            ClImageChannelOrder::sRGBA => cl3::memory::CL_sRGBA,
+            ClImageChannelOrder::SRgb => cl3::memory::CL_sRGB,
+            ClImageChannelOrder::SRgbx => cl3::memory::CL_sRGBx,
+            ClImageChannelOrder::SRgba => cl3::memory::CL_sRGBA,
             ClImageChannelOrder::Unknown(v) => v,
-
         }
     }
 }

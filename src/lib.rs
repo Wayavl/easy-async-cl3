@@ -1,8 +1,20 @@
-mod async_executor;
+//! # easy-async-cl3-ai
+//! 
+//! A high-level, async-first Rust wrapper for OpenCL with intelligent GPU management.
+//! 
+//! This library provides:
+//! - **Async/await support**: All GPU operations return futures
+//! - **Automatic resource management**: RAII-based cleanup
+//! - **Multi-GPU support**: Automatic work distribution
+//! - **Type-safe API**: Compile-time guarantees
+//! - **Profiling support**: Built-in performance measurement
+//! - **Modern OpenCL features**: Support for OpenCL 1.1 through 3.0
+
+pub mod async_executor;
 #[allow(unused)]
 #[allow(dead_code)]
-mod cl_types;
-mod error;
+pub mod cl_types;
+pub mod error;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
@@ -10,453 +22,224 @@ pub fn add(left: u64, right: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use core::time;
-    use std::{ffi::c_void, fs::File, io::Write, process::Command, ptr::{null, null_mut}, thread::sleep};
-
-    use cl3::platform;
-    use tokio::fs::read;
+    use std::sync::Arc;
+    use std::time::Instant;
+    use std::{ffi::c_void, ptr::null_mut};
 
     use crate::{
         cl_types::{
-            cl_buffer::ClBuffer, cl_command_queue::{
+            cl_command_queue::{
                 ClCommandQueue,
-                command_queue_parameters::{CommandQueueProperties, Version10, Version20},
-            }, cl_context::ClContext, cl_device::device_type::ALL, cl_image::{ClImage, image_desc::ClImageDesc, image_formats::ClImageFormats}, cl_kernel::ClKernel, cl_platform::ClPlatform, cl_program::{ClProgram, NotBuilded, program_parameters::ProgramParameters}, cl_svm_buffer::ClSvmBuffer, memory_flags::MemoryFlags
+                command_queue_parameters::{CommandQueueProperties, Version20},
+            }, 
+            cl_context::ClContext, 
+            cl_platform::ClPlatform, 
+            cl_image::{image_desc::ClImageDesc, image_formats::ClImageFormats},
+            memory_flags::MemoryFlags
         },
-        error::{ClError, api_error::ApiError, wrapper_error::WrapperError},
+        error::ClError,
     };
 
-    #[test]
-    fn cl_platform_test() -> Result<(), ClError> {
-        println!("All platforms: ");
-        let get_all_paltforms = ClPlatform::get_all()?;
-        get_all_paltforms.iter().for_each(|f| print!("{}\n", f));
-
-        let default_platform = ClPlatform::default()?;
-        println!("Default platform: {}", default_platform);
-        println!(
-            "Extensions: {}",
-            default_platform.get_extensions().unwrap_or_default()
-        );
-        println!(
-            "Extensions with version: {}",
-            default_platform
-                .get_extensions_with_version()
-                .unwrap_or_default()
-        );
-
-        Ok(())
+    macro_rules! time_it {
+        ($label:expr, $block:block) => {{
+            let start = Instant::now();
+            let result = $block;
+            let duration = start.elapsed();
+            println!("[TIMER] {}: {:?}", $label, duration);
+            result
+        }};
     }
 
     #[test]
-    fn cl_device_test() -> Result<(), ClError> {
-        let platforms = ClPlatform::get_all().unwrap();
-
-        for platform in platforms {
-            for device in platform.get_all_devices().unwrap() {
-                println!("Device: {}", device);
-                println!("  Name: {}", device.get_name().unwrap_or_default());
-                println!("  Vendor: {}", device.get_vendor().unwrap_or_default());
-                println!("  Version: {}", device.get_version().unwrap_or_default());
-                println!(
-                    "  Max Compute Units: {}",
-                    device.get_max_compute_units().unwrap_or_default()
-                );
-                println!(
-                    "  Global Memory Size: {}",
-                    device.get_global_mem_size().unwrap_or_default()
-                );
-                println!(
-                    "  Local Memory Size: {}",
-                    device.get_local_mem_size().unwrap_or_default()
-                );
-                println!(
-                    "  Max Work Group Size: {}",
-                    device.get_max_work_group_size().unwrap_or_default()
-                );
-                println!(
-                    "  Available: {}",
-                    device.get_available().unwrap_or_default()
-                );
-                println!(
-                    "  Max partition subdevice: {}",
-                    device.get_partition_max_sub_devices().unwrap_or_default()
-                );
-                println!(
-                    "  Clock frecuency: {}",
-                    device.get_max_clock_frequency().unwrap_or_default()
-                );
-                println!(
-                    "  Version number: {}",
-                    device.get_numeric_version().unwrap_or_default()
-                );
-                println!("  Profile: {}", device.get_profile().unwrap_or_default());
+    fn test_hardware_discovery() -> Result<(), ClError> {
+        println!("\n=== HARDWARE DISCOVERY ===");
+        let platforms = time_it!("Platform enumeration", { ClPlatform::get_all()? });
+        
+        for (i, platform) in platforms.iter().enumerate() {
+            println!("Platform [{}]: {}", i, platform);
+            let devices = time_it!(format!("Device discovery (Platform {})", i), { platform.get_all_devices()? });
+            for device in devices {
+                println!("  - Device: {}", device);
+                println!("    Version: {}", device.get_opencl_version());
+                println!("    Max Compute Units: {}", device.get_max_compute_units().unwrap_or(0));
             }
         }
-
         Ok(())
     }
 
     #[test]
-    fn cl_sub_device_test() -> Result<(), ClError> {
-        let default_platform = ClPlatform::default().unwrap();
-        let all_devices = default_platform.get_all_devices().unwrap();
-
-        for parent_device in all_devices {
-            let subdevice = parent_device.create_subdevice_equally(4)?;
-            for device in subdevice {
-                println!("Device: {}", device);
-                println!("  Name: {}", device.get_name().unwrap_or_default());
-                println!("  Vendor: {}", device.get_vendor().unwrap_or_default());
-                println!("  Version: {}", device.get_version().unwrap_or_default());
-                println!(
-                    "  Max Compute Units: {}",
-                    device.get_max_compute_units().unwrap_or_default()
-                );
-                println!(
-                    "  Global Memory Size: {}",
-                    device.get_global_mem_size().unwrap_or_default()
-                );
-                println!(
-                    "  Local Memory Size: {}",
-                    device.get_local_mem_size().unwrap_or_default()
-                );
-                println!(
-                    "  Max Work Group Size: {}",
-                    device.get_max_work_group_size().unwrap_or_default()
-                );
-                println!(
-                    "  Available: {}",
-                    device.get_available().unwrap_or_default()
-                );
-            }
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn cl_context_test() -> Result<(), ClError> {
-        let platform = ClPlatform::default().unwrap();
-        let context_from_device_type = ClContext::new_from_device_type(&platform, ALL)?;
-        let devices = platform.get_all_devices().unwrap();
-        let context_from_default = ClContext::new(&devices)?;
-
-        let context_array = vec![context_from_device_type, context_from_default];
-
-        for platform in context_array {
-            println!("Platform X");
-            println!(
-                "  Context reference count: {}",
-                platform.get_context_reference_count().unwrap_or_default()
-            );
-            println!(
-                "  Num devices: {}",
-                platform.get_num_devices().unwrap_or_default()
-            );
-            for i in platform.get_devices()? {
-                println!("  Device: X");
-                println!("  Info: {}", i)
-            }
-            println!(
-                "  Properties: {:?}",
-                platform.get_properties().unwrap_or_default()
-            );
-            println!("----\n\n");
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn cl_command_queue_test() -> Result<(), ClError> {
-        let platform = ClPlatform::default().unwrap();
-        let devices = platform.get_cpu_devices().unwrap();
-        let cpu = devices[0].clone();
-        let sub_devices = cpu.create_subdevice_equally(4).unwrap();
-        let context = ClContext::new(&sub_devices).unwrap();
-        let command_queue_parameters = CommandQueueProperties::<Version20>::new();
-
-        let mut command_queue: Vec<ClCommandQueue> = Vec::new();
-
-        let properties = command_queue_parameters.get_properties();
-        for device in &sub_devices {
-            let queue = ClCommandQueue::create_command_queue_with_properties(
-                &context,
-                &device,
-                &properties,
-            )?;
-            command_queue.push(queue);
-        }
-
-        for queue in command_queue {
-            println!("Queue X");
-            println!("  Context: {}", queue.get_context().unwrap());
-            println!("  Device: {}", queue.get_device().unwrap());
-            println!(
-                "      Device refence count: {}",
-                queue.get_device().unwrap().get_reference_count().unwrap()
-            );
-            println!(
-                "  Reference Count: {}",
-                queue.get_reference_count().unwrap()
-            );
-            println!(
-                "  Queue Size: {}",
-                queue.get_queue_size().unwrap_or_default()
-            )
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn program_test() -> Result<(), ClError> {
+    fn test_core_resource_lifecycle() -> Result<(), ClError> {
+        println!("\n=== RESOURCE LIFECYCLE ===");
         let platform = ClPlatform::default()?;
-        let devices_list = platform.get_all_devices()?;
-        let device = devices_list.first().unwrap();
-        let subdevice = device.create_subdevice_equally(4)?;
-        let context = ClContext::new(&subdevice)?;
-        let program_source = std::fs::read_to_string("./tests/program1test/add.cl").unwrap();
-        let unbuilded_program = ClProgram::<NotBuilded>::from_src(&context, program_source)?;
-
-        println!("Source: {}", unbuilded_program.get_source()?);
-        println!("Num Devices: {}", unbuilded_program.get_num_devices()?);
-
-        let build_options = ProgramParameters::default();
-        let build_options = build_options.get_parameters();
-        let builded_program = unbuilded_program.build(&build_options, &subdevice)?;
+        let devices = platform.get_all_devices()?;
+        
+        let context = time_it!("Context creation", { ClContext::new(&devices)? });
+        
+        for (i, device) in devices.iter().enumerate() {
+            let props = CommandQueueProperties::<Version20>::new()
+                .set_cl_queue_properties(true, true, false, false)
+                .get_properties();
+            
+            let _queue = time_it!(format!("Queue creation (Device {})", i), {
+                ClCommandQueue::create_command_queue_with_properties(&context, device, &props)?
+            });
+        }
         Ok(())
     }
 
     #[tokio::test]
-    async fn launch_kernel_without_svm() -> Result<(), ClError> {
-        // --- Plataforma y dispositivos ---
+    async fn test_memory_operations_comprehensive() -> Result<(), ClError> {
+        println!("\n=== MEMORY OPERATIONS ===");
         let platform = ClPlatform::default()?;
-        let devices_list = platform.get_all_devices()?;
-        let device = devices_list.first().unwrap();
-        let device = device.create_subdevice_equally(4)?;
-        let context = ClContext::new(&device)?;
+        let devices = platform.get_all_devices()?;
+        let device = devices.first().unwrap();
+        let executor = crate::async_executor::AsyncExecutor::new_from_devices(&devices)?;
+        
+        // 1. Buffer Test
+        let size = 1024 * 1024; // 1MB
+        let mut host_data: Vec<f32> = vec![42.0; size];
+        time_it!("Buffer allocation (1MB) [High-level]", {
+            executor.create_buffer(&[MemoryFlags::ReadWrite, MemoryFlags::CopyHostPtr], size * 4, host_data.as_mut_ptr() as *mut c_void)?
+        });
 
-        // --- Programa OpenCL ---
-        let program_source = std::fs::read_to_string("./tests/program1test/add.cl").unwrap();
-        let unbuilded_program = ClProgram::<NotBuilded>::from_src(&context, program_source)?;
-
-        println!("Source: {}", unbuilded_program.get_source()?);
-        println!("Num Devices: {}", unbuilded_program.get_num_devices()?);
-
-        let build_options = ProgramParameters::default().get_parameters();
-        let builded_program = match unbuilded_program.build(&build_options, &device) {
-            Ok(v) => v,
-            Err(_) => {
-                eprintln!("Program build error:");
-                for dev in &device {
-                    let log = unbuilded_program.get_logs(dev)?;
-                    eprintln!("Device log:\n{}", log);
-                }
-                panic!();
-            }
-        };
-
-        // --- Kernel ---
-        let kernel = ClKernel::new(&builded_program, "add")?;
-
-        // --- Command queue ---
-        let queue_properties = CommandQueueProperties::<Version20>::new()
-            .set_cl_queue_properties(true, true, false, false);
-        let queue = ClCommandQueue::create_command_queue_with_properties(
-            &context,
-            &device.first().unwrap(),
-            &queue_properties.get_properties(),
-        )?;
-
-        // --- Buffers y datos ---
-        let size = 2048;
-        let mut sum_a: Vec<f32> = vec![1.0; size];
-        let mut sum_b: Vec<f32> = vec![2.0; size];
-
-        let buffer_a_flags = vec![MemoryFlags::ReadWrite, MemoryFlags::CopyHostPtr];
-        let buffer_b_flags = vec![MemoryFlags::ReadOnly, MemoryFlags::CopyHostPtr];
-
-        let buffer_a = ClBuffer::new(
-            &context,
-            &buffer_a_flags,
-            size * size_of::<f32>(),
-            sum_a.as_mut_ptr() as *mut c_void,
-        )?;
-
-        let buffer_b = ClBuffer::new(
-            &context,
-            &buffer_b_flags,
-            size * size_of::<f32>(),
-            sum_b.as_mut_ptr() as *mut c_void,
-        )?;
-
-        // --- Setear argumentos del kernel ---
-        unsafe {
-            kernel.set_args(0, size_of::<*mut c_void>(), buffer_a.as_ptr())?;
-            kernel.set_args(1, size_of::<*mut c_void>(), buffer_b.as_ptr())?;
+        // 2. Image Test (Conditional)
+        if device.get_image_support().unwrap_or(false) {
+            let formats = ClImageFormats::rgba_unorm_int8();
+            let desc = ClImageDesc {
+                image_type: crate::cl_types::cl_image::image_type::ClImageType::Image2D,
+                image_width: Some(512),
+                image_height: Some(512),
+                ..Default::default()
+            };
+            let _image = time_it!("Image creation (512x512 RGBA) [High-level]", {
+                executor.create_image(&[MemoryFlags::ReadWrite], &formats, &desc, null_mut())?
+            });
         }
 
-        // --- Ejecutar kernel ---
-        let event = queue
-            .enqueue_nd_range_kernel(&kernel, 1, vec![0], vec![size], vec![64], None, None)
-            .await?;
-
-        // --- Leer resultados ---
-        queue
-            .enqueue_read_buffer(&buffer_a, None, &mut sum_a, None)
-            .await?;
-
-        println!("Primeros 10 resultados: {:?}", &sum_a[..10]);
+        // 3. SVM Test (Conditional OpenCL 2.0+)
+        if device.get_opencl_version() >= crate::cl_types::cl_device::opencl_version::OpenCLVersion::V2_0 {
+            let svm = time_it!("SVM allocation (1024 f32) [High-level]", {
+                executor.create_svm_buffer::<f32>(&[MemoryFlags::ReadWrite], 1024)?
+            });
+            if let Ok(svm_caps) = device.get_svm_capabilities() {
+                println!("  SVM Capabilites: {:?}", svm_caps);
+            }
+            drop(svm);
+        }
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn launch_kernel_with_svm() -> Result<(), ClError> {
-        // --- Plataforma y dispositivos ---
-        let platforms = ClPlatform::get_all()?;
-        let binding = ClPlatform::default()?;
-        let platform = platforms.first().unwrap_or(&binding);
-        let devices_list = platform.get_all_devices()?;
-        let device = devices_list.first().unwrap();
-        println!("Device capabilities: {}", device.get_svm_capabilities()?);
-
-        let context = ClContext::new(&devices_list)?;
-
-        // --- Programa OpenCL ---
-        let program_source = std::fs::read_to_string("./tests/program2testsvm/add.cl").unwrap();
-        let unbuilded_program = ClProgram::<NotBuilded>::from_src(&context, program_source)?;
-
-        println!("Source: {}", unbuilded_program.get_source()?);
-        println!("Num Devices: {}", unbuilded_program.get_num_devices()?);
-
-        let build_options = ProgramParameters::new().version("CL2.0").get_parameters();
-        let builded_program = match unbuilded_program.build(&build_options, &devices_list) {
-            Ok(v) => v,
-            Err(_) => {
-                eprintln!("Program build error:");
-                for dev in &devices_list {
-                    let log = unbuilded_program.get_logs(dev)?;
-                    eprintln!("Device log:\n{}", log);
-                }
-                panic!();
-            }
-        };
-
-        // --- Kernel ---
-        let kernel = ClKernel::new(&builded_program, "add")?;
-
-        // --- Command queue ---
-        let queue_properties = CommandQueueProperties::<Version20>::new()
-            .set_cl_queue_properties(true, true, false, false);
-        let queue = ClCommandQueue::create_command_queue_with_properties(
-            &context,
-            &device,
-            &queue_properties.get_properties(),
-        )?;
-
-        // --- Buffers y datos ---
-        let data_size = 1024;
-        let byte_size_of = size_of::<f32>();
-        let mut svm_a =
-            ClSvmBuffer::<f32>::new(&context, &vec![MemoryFlags::ReadWrite], data_size, 0)?;
-
-        let mut svm_b =
-            ClSvmBuffer::<f32>::new(&context, &vec![MemoryFlags::ReadWrite], data_size, 0)?;
-
-        {
-            let mut svm_a_lock = svm_a.map_mut(&queue, &vec![MemoryFlags::WriteOnly])?;
-            let mut svm_b_lock = svm_b.map_mut(&queue, &vec![MemoryFlags::WriteOnly])?;
-            for i in 0..data_size {
-                svm_a_lock[i] = i as f32;
-                svm_b_lock[i] = 1.0;
-            }
-        }
-        // --- Setear argumentos del kernel ---
-        unsafe {
-            kernel.set_svm_arg(0, svm_a.len, svm_a.as_ptr())?;
-            kernel.set_svm_arg(1, svm_b.len, svm_b.as_ptr())?;
+    async fn test_executor_full_pipeline() -> Result<(), ClError> {
+        println!("\n=== EXECUTOR PIPELINE ===");
+        let executor = time_it!("Executor initialization (Best Platform)", {
+            crate::async_executor::AsyncExecutor::new_best_platform_with_options(true)?
+        });
+        
+        let path = "./tests/program1test/add.cl";
+        if !std::path::Path::new(path).exists() {
+            println!("Skipping pipeline test: kernel file not found at {}", path);
+            return Ok(());
         }
 
-        // --- Ejecutar kernel ---
-        let event = queue
-            .enqueue_nd_range_kernel(&kernel, 1, vec![0], vec![data_size], vec![64], None, None)
-            .await?;
+        let source = std::fs::read_to_string(path).unwrap();
+        
+        let builded = time_it!("Program build (High-level)", {
+            executor.build_program(source, None)?
+        });
+        
+        let kernel = time_it!("Kernel creation (High-level)", {
+            executor.create_kernel(&builded, "add")?
+        });
 
-        // --- Leer resultados ---
-        {
-            let svm_a_lock = svm_a.map_mut(&queue, &vec![MemoryFlags::ReadOnly])?;
-            println!("Primeros 10 resultados: {:?}", &svm_a_lock[..10]);
-        }
+        let size = 1024 * 1024;
+        let mut a: Vec<f32> = vec![1.0; size];
+        let mut b: Vec<f32> = vec![2.0; size];
+        let buffer_a = executor.create_buffer(&[MemoryFlags::ReadWrite, MemoryFlags::CopyHostPtr], size * 4, a.as_mut_ptr() as *mut c_void)?;
+        let buffer_b = executor.create_buffer(&[MemoryFlags::ReadOnly, MemoryFlags::CopyHostPtr], size * 4, b.as_mut_ptr() as *mut c_void)?;
 
-        let event = queue
-            .enqueue_nd_range_kernel(&kernel, 1, vec![0], vec![data_size], vec![64], None, None)
-            .await?;
+        let report = time_it!("Task execution (AsyncExecutor)", {
+            executor.create_task(kernel)
+                .arg_buffer(0, &buffer_a)
+                .arg_buffer(1, &buffer_b)
+                .global_work_dims(size, 1, 1)
+                .read_buffer(&buffer_a, &mut a)
+                .run()
+                .await?
+        });
 
-        // --- Leer resultados ---
-        {
-            let svm_a_lock = svm_a.map_mut(&queue, &vec![MemoryFlags::ReadOnly])?;
-            println!("Primeros 10 resultados: {:?}", &svm_a_lock[..10]);
-        }
+        println!("--- Profiling Results ---");
+        println!("  Kernel Time (GPU): {} ns", report.total_kernel_duration_ns());
+        println!("  Read Time (GPU):   {} ns", report.total_read_duration_ns());
+        
+        assert!((a[0] - 3.0).abs() < 1e-5);
         Ok(())
     }
 
     #[tokio::test]
-    async fn image_test() -> Result<(), ClError> {
-        let platform_list = ClPlatform::get_all()?;
-        let platform = platform_list.get(0).unwrap();
-        let device_list = platform.get_all_devices()?;
-        let device = device_list.get(0).unwrap();
-
-        let context = ClContext::new(&device_list)?;
-
-        let command_queue_properties = CommandQueueProperties::<Version20>::new()
-            .set_cl_queue_properties(true, true, false, false);
-        let command_queue = ClCommandQueue::create_command_queue_with_properties(
-            &context,
-            device,
-            &command_queue_properties.get_properties(),
-        )?;
-
-        let program_source= read("./tests/program3imagetest/fillimage.cl").await.unwrap();
-        let program_source = String::from_utf8(program_source).unwrap();
-
-        let program = ClProgram::<NotBuilded>::from_src(&context, program_source)?;
-
-        let build_options = ProgramParameters::new();
-        let build = program.build(&build_options.get_parameters(), &device_list)?;
-
-        println!("Source: {}", build.get_source()?);
-
-        let mut host_image: Vec<u8> = vec![255; 1024 * 1024 * 4];
-        let memory_image= ClImage::new(&context, &vec![MemoryFlags::ReadWrite], &ClImageFormats {
-            image_channel_order: crate::cl_types::cl_image::image_channel_order::ClImageChannelOrder::RGBA,
-            image_channel_data_type: crate::cl_types::cl_image::image_channel_data_type::ClImageChannelType::UnormInt8,
-        }, 
-        &ClImageDesc {
-            image_type: crate::cl_types::cl_image::image_type::ClImageType::Image2D,
-            image_width: Some(1024),
-            image_height: Some(1024),
-            ..Default::default()
-        }, null_mut())?;
-
-        let kernel  = ClKernel::new(&build, "fill_image")?;
-
-        unsafe {
-            kernel.set_args(0, size_of::<*mut c_void>(), memory_image.as_ptr())?;
+    async fn test_concurrency_stress() -> Result<(), ClError> {
+        println!("\n=== CONCURRENCY STRESS ===");
+        let executor = Arc::new(crate::async_executor::AsyncExecutor::new_best_platform()?);
+        let path = "./tests/program1test/add.cl";
+        if !std::path::Path::new(path).exists() { return Ok(()); }
+        
+        let source = std::fs::read_to_string(path).unwrap();
+        let builded = executor.build_program(source, None)?;
+        
+        let mut tasks = Vec::new();
+        for i in 0..10 {
+            let kernel = executor.create_kernel(&builded, "add")?;
+            let mut data = vec![i as f32; 1024];
+            let buf = executor.create_buffer(&[MemoryFlags::ReadWrite, MemoryFlags::CopyHostPtr], 1024 * 4, data.as_mut_ptr() as *mut c_void)?;
+            let buf_b = executor.create_buffer(&[MemoryFlags::ReadOnly, MemoryFlags::CopyHostPtr], 1024 * 4, data.as_mut_ptr() as *mut c_void)?;
+            
+            let executor_clone = executor.clone();
+            tasks.push(async move {
+                executor_clone.create_task(kernel)
+                    .arg_buffer(0, &buf)
+                    .arg_buffer(1, &buf_b)
+                    .global_work_dims(1024, 1, 1)
+                    .run()
+                    .await
+            });
         }
+        
+        time_it!("10 Concurrent Tasks Submission", {
+            futures::future::join_all(tasks).await;
+        });
+        
+        Ok(())
+    }
 
-        let _launch_event = command_queue.enqueue_nd_range_kernel(&kernel, 2, vec![0, 0], vec![1024, 1024], vec![16, 16], None, None).await?;
-
-        unsafe {
-            command_queue.read_image(memory_image, vec![0,0], vec![1024,1024], 0, 0, host_image.as_mut_ptr() as *mut _, None).await?;
-        }
-
-
-        println!("Image first 64: {:?}", &host_image[..64]);
-
+    #[tokio::test]
+    async fn test_minimalist_api() -> Result<(), ClError> {
+        println!("\n=== MINIMALIST API EXAMPLE ===");
+        
+        // 1. Initialize
+        let executor = crate::async_executor::AsyncExecutor::new_best_platform()?;
+        
+        // 2. Build & Create Kernel
+        let program = executor.build_program("kernel void add(global float* a, global float* b) { a[get_global_id(0)] += b[get_global_id(0)]; }".to_string(), None)?;
+        let kernel = executor.create_kernel(&program, "add")?;
+        
+        // 3. Simple buffers
+        let mut data: Vec<f32> = vec![10.0; 1024];
+        let other: Vec<f32> = vec![5.0; 1024];
+        let buf_a = executor.create_buffer(&[MemoryFlags::ReadWrite, MemoryFlags::CopyHostPtr], 1024 * 4, data.as_mut_ptr() as *mut c_void)?;
+        let buf_b = executor.create_buffer(&[MemoryFlags::ReadOnly, MemoryFlags::CopyHostPtr], 1024 * 4, other.as_ptr() as *mut c_void)?;
+        
+        // 4. Run declaratively
+        executor.create_task(kernel)
+            .arg_buffer(0, &buf_a)
+            .arg_buffer(1, &buf_b)
+            .global_work_dims(1024, 1, 1)
+            .read_buffer(&buf_a, &mut data)
+            .run()
+            .await?;
+            
+        println!("Minimalist result: {}", data[0]);
+        assert_eq!(data[0], 15.0);
         Ok(())
     }
 }

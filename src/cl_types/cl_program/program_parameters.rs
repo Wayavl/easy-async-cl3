@@ -8,14 +8,28 @@ impl ProgramParameters {
     }
 
     pub fn name(mut self, value: &str) -> Self { 
+        if !self.parameters.is_empty() {
+            self.parameters.push_str(" ");
+        }
         self.parameters.push_str("-DNAME=");
         self.parameters.push_str(value);
         self
     }
 
     pub fn version(mut self, version: &str) -> Self {
+        if !self.parameters.is_empty() {
+            self.parameters.push_str(" ");
+        }
         self.parameters.push_str("-cl-std=");
         self.parameters.push_str(version);
+        self
+    }
+
+    pub fn custom(mut self, value: &str) -> Self {
+        if !self.parameters.is_empty() {
+            self.parameters.push_str(" ");
+        }
+        self.parameters.push_str(value);
         self
     }
 

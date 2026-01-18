@@ -242,3 +242,24 @@ impl Formatter for SvmCapabilities {
         Some(SvmCapabilities::from(number))
     }
 }
+
+use crate::cl_types::cl_image::image_formats::ClImageFormats;
+use crate::cl_types::cl_image::image_channel_data_type::ClImageChannelType;
+use crate::cl_types::cl_image::image_channel_order::ClImageChannelOrder;
+
+impl Formatter for ClImageFormats {
+    fn from_buffer(buffer: &[u8]) -> Option<Self> {
+        if buffer.len() != 8 {
+            return None;
+        }
+        let mut bytes_order = [0u8; 4];
+        let mut bytes_type = [0u8; 4];
+        bytes_order.copy_from_slice(&buffer[0..4]);
+        bytes_type.copy_from_slice(&buffer[4..8]);
+        
+        Some(ClImageFormats {
+            image_channel_order: ClImageChannelOrder::from(u32::from_le_bytes(bytes_order)),
+            image_channel_data_type: ClImageChannelType::from(u32::from_le_bytes(bytes_type)),
+        })
+    }
+}

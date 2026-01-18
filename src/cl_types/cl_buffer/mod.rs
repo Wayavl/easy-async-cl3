@@ -5,19 +5,31 @@ use crate::{
     error::{ClError, api_error::ApiError},
 };
 
+/// # ClBuffer
+/// 
+/// Represents a contiguous block of memory on the GPU (like an array or vector).
+/// It's the most common resource for passing data to a kernel.
 pub struct ClBuffer {
     value: *mut c_void,
 }
 
 impl ClBuffer {
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn from_ptr(value: *mut c_void) -> Self {
         Self { value }
     }
 
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn as_ptr(&self) -> *mut c_void {
         self.value.clone()
     }
 
+    /// Creates a new memory buffer in the specified context.
+    /// 
+    /// - `flags`: Permissions (e.g. ReadOnly, WriteOnly, CopyHostPtr).
+    /// - `buffer_size`: Total size in bytes.
+    /// - `host_ptr`: Optional pointer to CPU data to initialize the buffer.
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn new(
         context: &ClContext,
         flags: &Vec<MemoryFlags>,
@@ -34,14 +46,16 @@ impl ClBuffer {
     
 }
 
+#[cfg(feature = "CL_VERSION_1_1")]
 impl Drop for ClBuffer{
     fn drop(&mut self) {
         unsafe {
-            cl3::memory::retain_mem_object(self.as_ptr());
-        }
+            cl3::memory::release_mem_object(self.value);
+        };
     }
 }
 
+#[cfg(feature = "CL_VERSION_1_1")]
 impl Releaseable for ClBuffer {
     unsafe fn increase_reference_count(&self) {
         unsafe {

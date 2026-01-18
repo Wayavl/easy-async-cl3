@@ -6,20 +6,34 @@ use crate::{cl_types::cl_device::ClDevice, error::ClError};
 use crate::{cl_context_generate_getters, cl_types::{cl_platform::ClPlatform, releaseable::Releaseable}};
 use std::ptr::null_mut;
 use crate::error::api_error::ApiError;
+
+/// # ClContext
+/// 
+/// Represents an OpenCL context - the environment where kernels execute.
+/// 
+/// A context manages all the resources (buffers, images, programs, kernels) and
+/// coordinates execution across one or more devices. Think of it as the "workspace"
+/// where all your OpenCL operations happen.
 #[derive(Debug)]
 pub struct ClContext {
     value: *mut c_void,
 }
 
 impl ClContext {
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn from_ptr(value: *mut c_void) -> Self {
         Self { value }
     }
 
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn as_ptr(&self) -> *mut c_void {
         self.value
     } 
 
+    /// Creates a new context for the specified devices.
+    /// 
+    /// All devices must be from the same platform. The context will manage resources
+    /// and coordinate execution across all these devices.
     #[cfg(feature = "CL_VERSION_1_1")]
     pub fn new(device_list: &Vec<ClDevice>) -> Result<Self, ClError> {
         
@@ -34,6 +48,11 @@ impl ClContext {
         Ok(Self::from_ptr(raw_context))
     }
 
+    /// Creates a context from all devices of a specific type on a platform.
+    /// 
+    /// This is a convenience method when you want to use all GPUs, all CPUs, etc.
+    /// from a specific platform without manually querying devices.
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn new_from_device_type(
         platform: &ClPlatform,
         device_type: u64,
@@ -62,6 +81,7 @@ impl ClContext {
     );
 }
 
+#[cfg(feature = "CL_VERSION_1_1")]
 impl Releaseable for ClContext {
     unsafe fn increase_reference_count(&self) {
         unsafe {
@@ -70,6 +90,7 @@ impl Releaseable for ClContext {
     }
 }
 
+#[cfg(feature = "CL_VERSION_1_1")]
 impl Drop for ClContext {
     fn drop(&mut self) {
         unsafe {
@@ -78,12 +99,14 @@ impl Drop for ClContext {
     }
 }
 
+#[cfg(feature = "CL_VERSION_1_1")]
 impl std::fmt::Display for ClContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{{Context Id: {}, Num Devices: {}}}", self.value as isize, self.get_num_devices().unwrap_or_default())
     }
 }
 
+#[cfg(feature = "CL_VERSION_1_1")]
 impl Clone for ClContext {
     fn clone(&self) -> Self {
         unsafe {

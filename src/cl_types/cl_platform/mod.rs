@@ -6,19 +6,31 @@ use crate::{cl_types::formatter::Formatter};
 use std::{fmt, os::raw::c_void};
 use crate::error::api_error::ApiError;
 
+/// # ClPlatform
+/// 
+/// Represents an OpenCL platform (e.g., NVIDIA CUDA, AMD ROCm, Intel OpenCL).
+/// 
+/// A platform is essentially a vendor's implementation of OpenCL. Your system may have
+/// multiple platforms installed (one for each GPU vendor). Each platform can have
+/// multiple devices (GPUs, CPUs, etc.).
 pub struct ClPlatform {
     value: *mut c_void,
 }
 
 impl ClPlatform {
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn new(value: *mut c_void) -> Self {
         ClPlatform { value }
     }
     
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn as_ptr(&self) -> *mut c_void {
         self.value
     }
 
+    /// Gets all available OpenCL platforms on the system.
+    /// 
+    /// Returns a vector of all platforms (NVIDIA, AMD, Intel, etc.) that are installed.
     #[cfg(feature = "CL_VERSION_1_1")]
     pub fn get_all() -> Result<Vec<Self>, ClError> {
         use crate::error::api_error::ApiError;
@@ -28,6 +40,10 @@ impl ClPlatform {
         Ok(raw_pointers.iter_mut().map(|p| Self::new(*p)).collect())
     }
 
+    /// Gets the default platform (the one with the highest OpenCL version).
+    /// 
+    /// This is useful when you don't care which specific platform to use and just want
+    /// the most capable one available.
     #[cfg(feature = "CL_VERSION_1_1")]
     pub fn default() -> Result<Self, ClError> {
         let platforms = Self::get_all()?;
@@ -95,6 +111,7 @@ impl ClPlatform {
         cl3::platform::CL_PLATFORM_HOST_TIMER_RESOLUTION
     ),);
 
+    /// Gets all devices (GPUs, CPUs, accelerators) available on this platform.
     #[cfg(feature = "CL_VERSION_1_1")]
     pub fn get_all_devices(&self) -> Result<Vec<ClDevice>, ClError> {
         let raw_devices: Vec<*mut std::ffi::c_void> = cl3::device::get_device_ids(self.value, cl3::device::CL_DEVICE_TYPE_ALL)
@@ -102,6 +119,7 @@ impl ClPlatform {
         Ok(raw_devices.iter().map(|dev| ClDevice::new(*dev)).collect())
     }
 
+    /// Gets only GPU devices from this platform.
     #[cfg(feature = "CL_VERSION_1_1")]
     pub fn get_gpu_devices(&self) -> Result<Vec<ClDevice>, ClError> {
         let raw_devices = cl3::device::get_device_ids(self.value, cl3::device::CL_DEVICE_TYPE_GPU)
@@ -109,6 +127,7 @@ impl ClPlatform {
         Ok(raw_devices.iter().map(|dev| ClDevice::new(*dev)).collect())
     }
 
+    /// Gets only CPU devices from this platform.
     #[cfg(feature = "CL_VERSION_1_1")]
     pub fn get_cpu_devices(&self) -> Result<Vec<ClDevice>, ClError> {
         let raw_devices = cl3::device::get_device_ids(self.value, cl3::device::CL_DEVICE_TYPE_CPU)

@@ -218,3 +218,66 @@ macro_rules! cl_kernel_subgroup_generate_getters {
     };
 }
 
+#[macro_export]
+macro_rules! cl_image_generate_getters {
+    (
+        $(
+            ($name:ident, $type_of:ty, $value_id:expr)
+        ),* $(,)?
+    ) => {
+        $(
+            pub fn $name(&self)
+                -> Result<$type_of, $crate::error::ClError>
+            where
+                $type_of: $crate::cl_types::formatter::Formatter,
+            {
+                let buffer = cl3::memory::get_mem_object_info(self.value, $value_id)
+                    .map_err(|code| crate::error::ClError::Api(crate::error::api_error::ApiError::get_error(code)))?;
+
+                match buffer {
+                    cl3::info_type::InfoType::VecUchar(v) => {
+                        <$type_of as $crate::cl_types::formatter::Formatter>::from_buffer(&v)
+                            .ok_or_else(|| crate::error::ClError::Wrapper(crate::error::wrapper_error::WrapperError::FormatterFailed))
+                    },
+                    cl3::info_type::InfoType::Size(v) => {
+                        <$type_of as $crate::cl_types::formatter::Formatter>::from_buffer(&v.to_le_bytes())
+                            .ok_or_else(|| crate::error::ClError::Wrapper(crate::error::wrapper_error::WrapperError::FormatterFailed))
+                    },
+                    _ => {
+                        Err(crate::error::ClError::Wrapper(crate::error::wrapper_error::WrapperError::FormatterFailed))
+                    }
+                }
+            }
+        )*
+    };
+}
+
+#[macro_export]
+macro_rules! cl_event_profiling_generate_getters {
+    (
+        $(
+            ($name:ident, $type_of:ty, $value_id:expr)
+        ),* $(,)?
+    ) => {
+        $(
+            pub fn $name(&self)
+                -> Result<$type_of, $crate::error::ClError>
+            where
+                $type_of: $crate::cl_types::formatter::Formatter,
+            {
+                let buffer = cl3::event::get_event_profiling_info(self.value, $value_id)
+                    .map_err(|code| crate::error::ClError::Api(crate::error::api_error::ApiError::get_error(code)))?;
+
+                match buffer {
+                    cl3::info_type::InfoType::Ulong(v) => {
+                        <$type_of as $crate::cl_types::formatter::Formatter>::from_buffer(&v.to_le_bytes())
+                            .ok_or_else(|| crate::error::ClError::Wrapper(crate::error::wrapper_error::WrapperError::FormatterFailed))
+                    },
+                    _ => {
+                        Err(crate::error::ClError::Wrapper(crate::error::wrapper_error::WrapperError::FormatterFailed))
+                    }
+                }
+            }
+        )*
+    };
+}

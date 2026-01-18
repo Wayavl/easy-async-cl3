@@ -1,6 +1,9 @@
 pub mod device_type;
 pub mod svm_capabilities;
+pub mod opencl_version;
 use std::os::raw::c_void;
+
+use self::opencl_version::OpenCLVersion;
 
 #[cfg(feature = "CL_VERSION_2_0")]
 use crate::cl_types::cl_device::svm_capabilities::SvmCapabilities;
@@ -12,20 +15,35 @@ use crate::{
 use crate::error::api_error::ApiError;
 
 
+/// # ClDevice
+/// 
+/// Represents an OpenCL compute device (GPU, CPU, accelerator, etc.).
+/// 
+/// A device is the actual hardware that executes your kernels. Each device has
+/// specific capabilities (memory size, compute units, supported features) that
+/// you can query using the various getter methods.
+/// 
+/// Devices belong to a platform and are used to create contexts and command queues.
 #[derive(Debug, Default)]
 pub struct ClDevice {
     value: *mut c_void,
 }
 
 impl ClDevice {
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn new(value: *mut c_void) -> Self {
         Self { value }
     }
 
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn as_ptr(&self) -> *mut c_void {
         self.value
     }
 
+    /// Creates sub-devices by dividing compute units equally.
+    /// 
+    /// This allows you to partition a device into smaller devices, useful for
+    /// fine-grained control over resource allocation.
     #[cfg(feature = "CL_VERSION_1_2")]
     pub fn create_subdevice_equally(&self, units: isize) -> Result<Vec<Self>, ClError> {
         
@@ -48,6 +66,9 @@ impl ClDevice {
             .collect())
     }
 
+    /// Creates sub-devices with specific compute unit counts.
+    /// 
+    /// Allows you to create sub-devices with custom compute unit distributions.
     #[cfg(feature = "CL_VERSION_1_2")]
     pub fn create_subdevice_by_count(
         &self,
@@ -321,6 +342,16 @@ impl ClDevice {
         (get_extensions, String, cl3::device::CL_DEVICE_EXTENSIONS),
     );
 
+    /// Gets the OpenCL version supported by this device.
+    /// 
+    /// Returns an enum representing the version (e.g., V2_0, V3_0).
+    pub fn get_opencl_version(&self) -> OpenCLVersion {
+        self.get_version()
+            .ok()
+            .and_then(|v| v.parse::<OpenCLVersion>().ok())
+            .unwrap_or(OpenCLVersion::V1_1)
+    }
+
     #[cfg(feature = "CL_VERSION_1_2")]
     cl_device_generate_getters!(
         (
@@ -531,6 +562,7 @@ impl ClDevice {
     );
 }
 
+#[cfg(feature = "CL_VERSION_1_1")]
 impl Releaseable for ClDevice {
     unsafe fn increase_reference_count(&self) {
         unsafe {
@@ -539,6 +571,7 @@ impl Releaseable for ClDevice {
     }
 }
 
+#[cfg(feature = "CL_VERSION_1_1")]
 impl Drop for ClDevice {
     fn drop(&mut self) {
         unsafe {
@@ -560,6 +593,7 @@ impl std::fmt::Display for ClDevice {
     }
 }
 
+#[cfg(feature = "CL_VERSION_1_1")]
 impl Clone for ClDevice {
     fn clone(&self) -> Self {
         unsafe {

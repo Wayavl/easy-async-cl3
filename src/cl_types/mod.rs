@@ -12,3 +12,4 @@ pub mod cl_buffer;
 pub mod memory_flags;
 pub mod cl_svm_buffer;
 pub mod cl_image;
+pub mod cl_pipe;

@@ -5,4 +5,5 @@ pub enum WrapperError {
     SubdeviceNotAvailableForThisDevice,
     DeviceNotFoundInProgram,
     FailedToConvertStrToCString,
+    PlatformsNotFound,
 }

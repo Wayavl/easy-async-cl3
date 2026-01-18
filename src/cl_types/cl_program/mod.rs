@@ -26,15 +26,21 @@ pub struct ClProgram<T> {
 }
 
 impl<T> ClProgram<T> {
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn from_ptr(value: *mut c_void) -> Self {
         Self {
             value,
             phantom_value: PhantomData,
         }
     }
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn as_ptr(&self) -> *mut c_void {
         self.value
     }
+    /// Creates a program from OpenCL C source code.
+    /// 
+    /// The program is not yet compiled - you must call `build()` before creating kernels.
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn from_src(context: &ClContext, source: String) -> Result<ClProgram<NotBuilded>, ClError> {
         let source: Vec<&str> = vec![source.as_str()];
         let raw_program =
@@ -96,6 +102,7 @@ impl<T> ClProgram<T> {
         (get_logs, String, cl3::program::CL_PROGRAM_BUILD_LOG),
     );
 
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn get_binary(&self) -> Result<Vec<Vec<u8>>, ClError> {
         let devices = self.get_devices()?;
         let raw_devices: Vec<*mut c_void> = devices.iter().map(|f| f.as_ptr()).collect();
@@ -112,6 +119,11 @@ impl<T> ClProgram<T> {
 }
 
 impl ClProgram<NotBuilded> {
+    /// Builds (compiles) the program for the specified devices.
+    /// 
+    /// Returns a `ClProgram<Builded>` on success, which can be used to create kernels.
+    /// Build options can include optimization flags, defines, etc.
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn build(
         &self,
         options: &String,
@@ -140,8 +152,6 @@ impl ClProgram<NotBuilded> {
             phantom_value: PhantomData,
         })
     }
-
-    
 }
 
 impl ClProgram<Builded> {
@@ -160,6 +170,7 @@ impl ClProgram<Builded> {
 
 }
 
+#[cfg(feature = "CL_VERSION_1_1")]
 impl<T> Clone for ClProgram<T> {
     fn clone(&self) -> Self {
         unsafe {
@@ -173,6 +184,7 @@ impl<T> Clone for ClProgram<T> {
     }
 }
 
+#[cfg(feature = "CL_VERSION_1_1")]
 impl<T> Releaseable for ClProgram<T> {
     unsafe fn increase_reference_count(&self) {
         unsafe {
@@ -181,6 +193,7 @@ impl<T> Releaseable for ClProgram<T> {
     }
 }
 
+#[cfg(feature = "CL_VERSION_1_1")]
 impl<T> Drop for ClProgram<T> {
     fn drop(&mut self) {
         unsafe {

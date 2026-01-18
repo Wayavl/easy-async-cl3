@@ -5,3 +5,18 @@ pub struct ClImageFormats {
     pub image_channel_data_type: ClImageChannelType,
 }
 
+impl ClImageFormats {
+    pub fn rgba_unorm_int8() -> Self {
+        Self {
+            image_channel_order: ClImageChannelOrder::RGBA,
+            image_channel_data_type: ClImageChannelType::UnormInt8,
+        }
+    }
+
+    pub fn rgba_float() -> Self {
+        Self {
+            image_channel_order: ClImageChannelOrder::RGBA,
+            image_channel_data_type: ClImageChannelType::Float,
+        }
+    }
+}
