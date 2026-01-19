@@ -1,4 +1,4 @@
-//! # easy-async-cl3-ai
+//! # easy-async-cl3
 //! 
 //! A high-level, async-first Rust wrapper for OpenCL with intelligent GPU management.
 //! 
