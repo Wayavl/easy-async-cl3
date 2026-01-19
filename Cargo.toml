@@ -1,5 +1,5 @@
 [package]
-name = "easy-async-cl3"
+name = "easy-async-opencl3"
 version = "0.1.0"
 edition = "2024"
 authors = ["wayavl encrucija2@gmail.com"]
