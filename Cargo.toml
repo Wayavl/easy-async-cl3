@@ -1,6 +1,6 @@
 [package]
 name = "easy-async-opencl3"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 authors = ["wayavl encrucija2@gmail.com"]
 description = "A declarative, multi-device asynchronous executor for OpenCL based on cl3."
