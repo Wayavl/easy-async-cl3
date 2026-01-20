@@ -605,3 +605,7 @@ impl Clone for ClDevice {
         }
     }
 }
+
+
+unsafe impl Sync for ClDevice {}
+unsafe impl Send for ClDevice {}

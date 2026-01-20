@@ -72,3 +72,7 @@ impl Clone for ClPipe {
         Self { value: self.value }
     }
 }
+
+
+unsafe impl Sync for ClPipe {}
+unsafe impl Send for ClPipe {}

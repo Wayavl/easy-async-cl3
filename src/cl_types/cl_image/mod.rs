@@ -180,3 +180,6 @@ fn supp() -> Result<(), ClError> {
     );
     Ok(())
 }
+
+unsafe impl Sync for ClImage {}
+unsafe impl Send for ClImage {}

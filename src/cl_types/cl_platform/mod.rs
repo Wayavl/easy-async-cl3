@@ -172,3 +172,7 @@ impl fmt::Display for ClPlatform {
         )
     }
 }
+
+
+unsafe impl Sync for ClPlatform {}
+unsafe impl Send for ClPlatform {}

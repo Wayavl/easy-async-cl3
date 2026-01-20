@@ -118,3 +118,6 @@ impl Clone for ClContext {
         }
     }
 }
+
+unsafe impl Sync for ClContext {}
+unsafe impl Send for ClContext {}

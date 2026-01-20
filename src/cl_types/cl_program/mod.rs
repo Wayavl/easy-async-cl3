@@ -201,3 +201,10 @@ impl<T> Drop for ClProgram<T> {
         }
     }
 }
+
+
+unsafe impl Sync for ClProgram<Builded> {}
+unsafe impl Send for ClProgram<Builded> {}
+
+unsafe impl Sync for ClProgram<NotBuilded> {}
+unsafe impl Send for ClProgram<NotBuilded> {}

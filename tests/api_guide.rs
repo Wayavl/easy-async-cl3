@@ -1,4 +1,4 @@
-use easy_async_cl3::{
+use easy_async_opencl3::{
     async_executor::AsyncExecutor,
     cl_types::memory_flags::MemoryFlags,
     error::ClError,
@@ -51,7 +51,7 @@ async fn guide_01_vector_addition() -> Result<(), ClError> {
 async fn guide_02_svm_basics() -> Result<(), ClError> {
     let executor = AsyncExecutor::new_best_platform()?;
     let device = executor.get_context().get_devices()?.first().cloned().unwrap();
-    if device.get_opencl_version() < easy_async_cl3::cl_types::cl_device::opencl_version::OpenCLVersion::V2_0 {
+    if device.get_opencl_version() < easy_async_opencl3::cl_types::cl_device::opencl_version::OpenCLVersion::V2_0 {
         return Ok(());
     }
 
@@ -109,7 +109,7 @@ async fn guide_05_pipes_communication() -> Result<(), ClError> {
     let executor = AsyncExecutor::new_best_platform()?;
     let device = executor.get_context().get_devices()?.first().cloned().unwrap();
     
-    if device.get_opencl_version() < easy_async_cl3::cl_types::cl_device::opencl_version::OpenCLVersion::V2_0 || !device.get_pipe_support().unwrap_or(false) {
+    if device.get_opencl_version() < easy_async_opencl3::cl_types::cl_device::opencl_version::OpenCLVersion::V2_0 || !device.get_pipe_support().unwrap_or(false) {
         println!("Pipes not supported, skipping.");
         return Ok(());
     }
@@ -117,7 +117,7 @@ async fn guide_05_pipes_communication() -> Result<(), ClError> {
     // Note: ClPipe is only available if the CL_VERSION_2_0 feature is active.
     #[cfg(feature = "CL_VERSION_2_0")]
     {
-        use easy_async_cl3::cl_types::cl_pipe::ClPipe;
+        use easy_async_opencl3::cl_types::cl_pipe::ClPipe;
         let _pipe = ClPipe::new(executor.get_context().as_ref(), &[MemoryFlags::ReadWrite], 4, 1024)?;
         println!("Guide 05: Pipe created successfully.");
     }

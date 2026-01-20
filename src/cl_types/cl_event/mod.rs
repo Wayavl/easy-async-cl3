@@ -128,3 +128,7 @@ impl Clone for ClEvent {
         }
     }
 }
+
+
+unsafe impl Sync for ClEvent {}
+unsafe impl Send for ClEvent {}

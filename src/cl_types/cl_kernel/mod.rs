@@ -143,3 +143,8 @@ impl Releaseable for ClKernel {
         }
     }
 }
+
+
+
+unsafe impl Sync for ClKernel {}
+unsafe impl Send for ClKernel {}

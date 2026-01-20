@@ -435,3 +435,6 @@ impl Clone for ClCommandQueue {
         }
     }
 }
+
+unsafe impl Sync for ClCommandQueue {}
+unsafe impl Send for ClCommandQueue {}

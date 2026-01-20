@@ -63,3 +63,6 @@ impl Releaseable for ClBuffer {
         }
     }
 }
+
+unsafe impl Sync for ClBuffer {}
+unsafe impl Send for ClBuffer {}
