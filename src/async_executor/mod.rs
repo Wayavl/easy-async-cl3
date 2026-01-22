@@ -302,3 +302,6 @@ impl AsyncExecutor {
         Ok(((compute_units as u64 * clock_frequency as u64) / 100) + (memory / 10))
     }
 }
+
+unsafe impl Sync for AsyncExecutor {}
+unsafe impl Send for AsyncExecutor {}
