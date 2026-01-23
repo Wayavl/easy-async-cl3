@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "easy-async-opencl3"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "cl3",
  "futures",

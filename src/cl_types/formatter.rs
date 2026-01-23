@@ -53,7 +53,9 @@ impl Formatter for usize {
 
 impl Formatter for String {
     fn from_buffer(buffer: &[u8]) -> Option<Self> {
-        String::from_utf8(buffer.to_vec()).ok()
+        String::from_utf8(buffer.to_vec())
+            .ok()
+            .map(|s| s.trim_matches(char::from(0)).to_string())
     }
 }
 

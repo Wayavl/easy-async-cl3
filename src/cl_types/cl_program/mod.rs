@@ -117,14 +117,9 @@ impl<T> ClProgram<T> {
                 binaries.push(vec);
             } else {
                  // OpenCL 1.2: If size is 0, the binary is not available.
-                 // We still need a pointer slot, but it should be NULL? 
-                 // Or we just allocate 0 size?
-                 // The spec says: "If an entry in binaries is NULL... the corresponding binary is not returned."
-                 // But we want to fetch, so we should allow valid pointers. 
-                 // If size is 0, we can't allocate.
                  binary_ptrs.push(null_mut());
                  binaries.push(Vec::new());
-            }
+             }
         }
         
         unsafe {
@@ -147,10 +142,6 @@ impl<T> ClProgram<T> {
         let binaries = self.get_binaries()?;
         let devices = self.get_devices()?;
         
-        if binaries.len() != devices.len() {
-             // This can happen if devices list mismatch? Should not.
-        }
-        
         if let Err(_) = std::fs::create_dir_all(folder_path) {
              return Err(ClError::Wrapper(WrapperError::FileIOError));
         }
@@ -160,7 +151,9 @@ impl<T> ClProgram<T> {
             if i >= devices.len() { break; }
             
             let device = &devices[i];
-            let device_name = device.get_name().unwrap_or("unknown".to_string()).replace(" ", "_");
+            let device_name = device.get_name()
+                .unwrap_or("unknown".to_string())
+                .replace(" ", "_");
             let filename = format!("{}_{}_{}.bin", file_stem, device_name, i);
             let path = Path::new(folder_path).join(filename);
             
