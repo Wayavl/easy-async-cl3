@@ -362,3 +362,6 @@ impl<'a> TaskBuilder<'a> {
         Ok(report)
     }
 }
+
+unsafe impl Sync for TaskBuilder<'_> {}
+unsafe impl Send for TaskBuilder<'_> {}
