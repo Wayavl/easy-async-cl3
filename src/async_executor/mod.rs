@@ -261,7 +261,7 @@ impl AsyncExecutor {
     ) -> Result<ClProgram<Builded>, ClError> {
         use std::fs;
         use std::path::Path;
-        use std::io::{Read, Write};
+        use std::io::Read;
         use crate::error::wrapper_error::WrapperError;
 
         let path = Path::new(src_path);
@@ -326,27 +326,7 @@ impl AsyncExecutor {
         let built_program = self.build_program(src_content, options)?;
 
         // Save binaries
-        if let Err(_) = fs::create_dir_all(binary_dest_folder) {
-             return Err(ClError::Wrapper(WrapperError::FileIOError));
-        }
-
-        if let Ok(saved_binaries) = built_program.get_binary() {
-            for (i, binary) in saved_binaries.iter().enumerate() {
-                if i >= devices.len() { break; }
-                if binary.is_empty() { continue; }
-                
-                let device = &devices[i];
-                // Ignore error if get_name fails here, preserving flow? 
-                // Using unwrap_or for robustness
-                let device_name = device.get_name().unwrap_or("unknown".to_string()).replace(" ", "_");
-                let bin_filename = format!("{}_{}_{}.bin", file_stem, device_name, i);
-                let bin_path = Path::new(binary_dest_folder).join(bin_filename);
-                
-                if let Ok(mut f) = fs::File::create(bin_path) {
-                    let _ = f.write_all(binary);
-                }
-            }
-        }
+        let _ = built_program.save_binary(binary_dest_folder, file_stem);
 
         Ok(built_program)
     }

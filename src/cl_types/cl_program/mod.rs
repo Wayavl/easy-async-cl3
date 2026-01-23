@@ -2,6 +2,20 @@ pub mod program_parameters;
 pub mod program_build_status;
 pub mod program_binary_type;
 use cl3::{ext::{CL_PROGRAM_BINARIES, CL_PROGRAM_BUILD_STATUS}, program::{build_program, get_program_build_data, create_program_with_binary}};
+use std::ffi::CString;
+use std::fs::File;
+use std::io::Write;
+use std::path::Path;
+
+unsafe extern "C" {
+    fn clGetProgramInfo(
+        program: *mut c_void,
+        param_name: u32,
+        param_value_size: usize,
+        param_value: *mut c_void,
+        param_value_size_ret: *mut usize,
+    ) -> i32;
+}
 #[cfg(feature = "CL_VERSION_2_1")]
 use cl3::program::create_program_with_il;
 
@@ -11,7 +25,7 @@ use crate::{
     cl_program_build_generate_getters, cl_program_generate_getters, cl_types::{cl_context::ClContext, cl_device::ClDevice, releaseable::Releaseable}, error::{ClError, api_error::ApiError, wrapper_error::WrapperError}
 };
 use std::{
-    ffi::{CStr, CString},
+    ffi::CStr,
     marker::PhantomData,
     ops::Not,
     os::raw::c_void,
@@ -89,10 +103,72 @@ impl<T> ClProgram<T> {
     );
 
     #[cfg(feature = "CL_VERSION_1_1")]
-    #[cfg(feature = "CL_VERSION_1_1")]
-    pub fn get_binary(&self) -> Result<Vec<Vec<u8>>, ClError> {
-        // Implement when cl3 supports get_program_binaries or exposes clGetProgramInfo
-        Err(ClError::Wrapper(WrapperError::FormatterFailed)) 
+    pub fn get_binaries(&self) -> Result<Vec<Vec<u8>>, ClError> {
+        let sizes = self.get_binary_sizes()?;
+        let num_devices = sizes.len();
+        
+        let mut binaries: Vec<Vec<u8>> = Vec::with_capacity(num_devices);
+        let mut binary_ptrs: Vec<*mut u8> = Vec::with_capacity(num_devices);
+        
+        for size in &sizes {
+            if *size > 0 {
+                let mut vec = vec![0u8; *size as usize];
+                binary_ptrs.push(vec.as_mut_ptr());
+                binaries.push(vec);
+            } else {
+                 // OpenCL 1.2: If size is 0, the binary is not available.
+                 // We still need a pointer slot, but it should be NULL? 
+                 // Or we just allocate 0 size?
+                 // The spec says: "If an entry in binaries is NULL... the corresponding binary is not returned."
+                 // But we want to fetch, so we should allow valid pointers. 
+                 // If size is 0, we can't allocate.
+                 binary_ptrs.push(null_mut());
+                 binaries.push(Vec::new());
+            }
+        }
+        
+        unsafe {
+             let status = clGetProgramInfo(
+                 self.value,
+                 CL_PROGRAM_BINARIES,
+                 num_devices * std::mem::size_of::<*mut c_void>(),
+                 binary_ptrs.as_mut_ptr() as *mut c_void,
+                 null_mut()
+             );
+             if status != 0 {
+                  return Err(ClError::Api(ApiError::get_error(status)));
+             }
+        }
+             
+        Ok(binaries)
+    }
+
+    pub fn save_binary(&self, folder_path: &str, file_stem: &str) -> Result<(), ClError> {
+        let binaries = self.get_binaries()?;
+        let devices = self.get_devices()?;
+        
+        if binaries.len() != devices.len() {
+             // This can happen if devices list mismatch? Should not.
+        }
+        
+        if let Err(_) = std::fs::create_dir_all(folder_path) {
+             return Err(ClError::Wrapper(WrapperError::FileIOError));
+        }
+
+        for (i, binary) in binaries.iter().enumerate() {
+            if binary.is_empty() { continue; }
+            if i >= devices.len() { break; }
+            
+            let device = &devices[i];
+            let device_name = device.get_name().unwrap_or("unknown".to_string()).replace(" ", "_");
+            let filename = format!("{}_{}_{}.bin", file_stem, device_name, i);
+            let path = Path::new(folder_path).join(filename);
+            
+            let mut file = File::create(path).map_err(|_| ClError::Wrapper(WrapperError::FileIOError))?;
+            file.write_all(binary).map_err(|_| ClError::Wrapper(WrapperError::FileIOError))?;
+        }
+        
+        Ok(())
     }
 
 }
