@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, os::raw::c_void, ptr::null};
 
-use cl3::context;
+use cl3::{command_queue::enqueue_svm_mem_cpy, context};
 
 use crate::{cl_types::{memory_flags::MemoryFlags, cl_command_queue::ClCommandQueue, cl_context::ClContext}, error::{ClError, api_error::ApiError}};
 
@@ -92,6 +92,7 @@ pub struct SvmMapGuard<'a, T> {
     _marker: PhantomData<&'a mut [T]>,
 }
 
+
 #[cfg(feature = "CL_VERSION_2_0")]
 impl<T> std::ops::Deref for SvmMapGuard<'_, T> {
     type Target = [T];
@@ -125,4 +126,11 @@ impl<T> Drop for SvmMapGuard<'_, T> {
         }
     }
 }
+
+unsafe impl<T> Sync for ClSvmBuffer<T> {}
+unsafe impl<T> Send for ClSvmBuffer<T> {}
+
+unsafe impl<'a, T> Sync for SvmMapGuard<'a, T> where T: Sync {}
+unsafe impl<'a, T> Send for SvmMapGuard<'a, T> where T: Send {}
+
 
