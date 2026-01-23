@@ -6,4 +6,5 @@ pub enum WrapperError {
     DeviceNotFoundInProgram,
     FailedToConvertStrToCString,
     PlatformsNotFound,
+    FileIOError,
 }

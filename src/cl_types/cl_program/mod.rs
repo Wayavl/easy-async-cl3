@@ -1,7 +1,9 @@
 pub mod program_parameters;
 pub mod program_build_status;
 pub mod program_binary_type;
-use cl3::{ext::{CL_PROGRAM_BINARIES, CL_PROGRAM_BUILD_STATUS}, program::{build_program, get_program_build_data}};
+use cl3::{ext::{CL_PROGRAM_BINARIES, CL_PROGRAM_BUILD_STATUS}, program::{build_program, get_program_build_data, create_program_with_binary}};
+#[cfg(feature = "CL_VERSION_2_1")]
+use cl3::program::create_program_with_il;
 
 #[cfg(feature = "CL_VERSION_1_1")]
 use crate::cl_types::cl_program::{program_binary_type::ProgramBinaryType, program_build_status::ProgramBuildStatus};
@@ -52,22 +54,6 @@ impl<T> ClProgram<T> {
         })
     }
 
-    // pub fn from_binary(context: &ClContext, binary: Vec<u8>) {
-
-    // }
-
-    // pub fn from_il(
-    //     context: &ClContext,
-    //     il: Vec<u8>,
-    // ) -> Result<ClProgram<NotBuilded>, ClError> {
-    //     let raw_program = cl3::program::create_program_with_il(context.as_ptr(), il.as_slice())
-    //         .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
-    //     Ok(ClProgram {
-    //         value: raw_program,
-    //         phantom_value: PhantomData,
-    //     })
-    // }
-
     #[cfg(feature = "CL_VERSION_1_1")]
     cl_program_generate_getters!(
         (get_context, ClContext, cl3::program::CL_PROGRAM_CONTEXT),
@@ -103,22 +89,57 @@ impl<T> ClProgram<T> {
     );
 
     #[cfg(feature = "CL_VERSION_1_1")]
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub fn get_binary(&self) -> Result<Vec<Vec<u8>>, ClError> {
-        let devices = self.get_devices()?;
-        let raw_devices: Vec<*mut c_void> = devices.iter().map(|f| f.as_ptr()).collect();
-        let sizes = self.get_binary_sizes()?;
-        let mut binaries: Vec<Vec<u8>> = Vec::new();
-
-        sizes.iter().map(|f| binaries.push(vec![0u8; *f as usize]));
-        
-        let b = cl3::program::get_program_info(self.value, CL_PROGRAM_BINARIES).map_err(|err| ClError::Api(ApiError::get_error(err)))?;
-
-        todo!()
+        // Implement when cl3 supports get_program_binaries or exposes clGetProgramInfo
+        Err(ClError::Wrapper(WrapperError::FormatterFailed)) 
     }
 
 }
 
 impl ClProgram<NotBuilded> {
+    /// Builds (compiles) the program for the specified devices.
+    /// 
+    /// Returns a `ClProgram<Builded>` on success, which can be used to create kernels.
+    /// Build options can include optimization flags, defines, etc.
+    #[cfg(feature = "CL_VERSION_1_1")]
+    #[cfg(feature = "CL_VERSION_1_1")]
+    pub fn from_binary(
+        context: &ClContext,
+        devices: &[ClDevice],
+        binaries: &[&[u8]],
+    ) -> Result<ClProgram<NotBuilded>, ClError> {
+        let device_ptrs: Vec<*mut c_void> = devices.iter().map(|d| d.as_ptr()).collect();
+        let raw_program = unsafe {
+             create_program_with_binary(
+                context.as_ptr(),
+                &device_ptrs,
+                binaries,
+            )
+            .map_err(|code| ClError::Api(ApiError::get_error(code)))?
+        };
+
+        Ok(ClProgram {
+            value: raw_program,
+            phantom_value: PhantomData,
+        })
+    }
+
+    #[cfg(feature = "CL_VERSION_2_1")]
+    pub fn from_il(
+        context: &ClContext,
+        il: &[u8],
+    ) -> Result<ClProgram<NotBuilded>, ClError> {
+        let raw_program = unsafe {
+            create_program_with_il(context.as_ptr(), il)
+            .map_err(|code| ClError::Api(ApiError::get_error(code)))?
+        };
+        Ok(ClProgram {
+            value: raw_program,
+            phantom_value: PhantomData,
+        })
+    }
+
     /// Builds (compiles) the program for the specified devices.
     /// 
     /// Returns a `ClProgram<Builded>` on success, which can be used to create kernels.

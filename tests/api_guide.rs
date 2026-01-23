@@ -52,6 +52,7 @@ async fn guide_02_svm_basics() -> Result<(), ClError> {
     let executor = AsyncExecutor::new_best_platform()?;
     let device = executor.get_context().get_devices()?.first().cloned().unwrap();
     if device.get_opencl_version() < easy_async_opencl3::cl_types::cl_device::opencl_version::OpenCLVersion::V2_0 {
+        println!("{}", device.get_opencl_version());
         return Ok(());
     }
 
@@ -70,8 +71,9 @@ async fn guide_02_svm_basics() -> Result<(), ClError> {
 
     let queue = &executor.get_queues()[0];
     let guard = svm_buffer.map_mut(queue, &vec![MemoryFlags::ReadOnly])?;
-    assert_eq!(guard[0], 42.0);
     println!("Guide 02: Success! SVM value is {}", guard[0]);
+    assert_eq!(guard[0], 42.0);
+    
     Ok(())
 }
 

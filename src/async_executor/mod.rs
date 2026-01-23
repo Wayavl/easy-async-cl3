@@ -35,6 +35,7 @@ pub struct AsyncExecutor {
     weights: Vec<u64>,
     profiling_enabled: bool,
     device_versions: Vec<OpenCLVersion>,
+    devices: Vec<ClDevice>,
 }
 
 #[cfg(feature = "CL_VERSION_1_1")]
@@ -124,6 +125,7 @@ impl AsyncExecutor {
             weights,
             device_versions,
             profiling_enabled,
+            devices: devices.into_iter().map(|d| d.clone()).collect(),
         };
 
         Ok(executor)
@@ -187,6 +189,7 @@ impl AsyncExecutor {
             weights,
             device_versions,
             profiling_enabled,
+            devices: devices_vec,
         })
     }
 
@@ -203,7 +206,7 @@ impl AsyncExecutor {
     }
 
     pub fn get_devices(&self) -> Result<Vec<ClDevice>, ClError> {
-        self.context.get_devices()
+        Ok(self.devices.iter().map(|d| d.clone()).collect())
     }
 
     pub fn get_queues(&self) -> &[ClCommandQueue] {
@@ -243,7 +246,109 @@ impl AsyncExecutor {
             None => ProgramParameters::default().get_parameters(),
         };
 
-        unbuilded.build(&params, &devices)
+    unbuilded.build(&params, &devices)
+    }
+
+    /// Compiles the program or loads it from binary if available.
+    ///
+    /// Checks if binaries exist in `binary_dest_folder`. If so, loads them.
+    /// Otherwise, compiles from `src_path` and saves binaries to `binary_dest_folder`.
+    pub fn compile_or_binary(
+        &self,
+        src_path: &str,
+        binary_dest_folder: &str,
+        options: Option<&str>,
+    ) -> Result<ClProgram<Builded>, ClError> {
+        use std::fs;
+        use std::path::Path;
+        use std::io::{Read, Write};
+        use crate::error::wrapper_error::WrapperError;
+
+        let path = Path::new(src_path);
+        let file_stem = path.file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or(ClError::Wrapper(WrapperError::FailedToConvertStrToCString))?; 
+
+        let devices = self.context.get_devices()?;
+        
+        let mut binaries: Vec<Vec<u8>> = Vec::new();
+        let mut use_binaries = true;
+
+        for (i, device) in devices.iter().enumerate() {
+            let device_name = device.get_name()?.replace(" ", "_");
+            let bin_filename = format!("{}_{}_{}.bin", file_stem, device_name, i);
+            let bin_path = Path::new(binary_dest_folder).join(bin_filename);
+
+            if bin_path.exists() {
+                match fs::read(&bin_path) {
+                    Ok(content) => binaries.push(content),
+                    Err(_) => {
+                        use_binaries = false;
+                        break;
+                    }
+                }
+            } else {
+                use_binaries = false;
+                break;
+            }
+        }
+
+        if use_binaries && binaries.len() == devices.len() {
+             let binary_slices: Vec<&[u8]> = binaries.iter().map(|b| b.as_slice()).collect();
+             
+             match ClProgram::<NotBuilded>::from_binary(&self.context, &devices, &binary_slices) {
+                 Ok(program) => {
+                    let params = match options {
+                        Some(opt) => ProgramParameters::default().custom(opt).get_parameters(),
+                        None => ProgramParameters::default().get_parameters(),
+                    };
+                    
+                    match program.build(&params, &devices) {
+                        Ok(built) => return Ok(built),
+                        Err(_) => {
+                            // Build from binary failed. Fallback to source.
+                        }
+                    }
+                 },
+                 Err(_) => {
+                     // Failed to create from binary. Fallback.
+                 }
+             }
+        }
+
+        // Compile from source
+        let mut src_content = String::new();
+        fs::File::open(src_path)
+            .map_err(|_| ClError::Wrapper(WrapperError::FileIOError))?
+            .read_to_string(&mut src_content)
+            .map_err(|_| ClError::Wrapper(WrapperError::FileIOError))?;
+
+        let built_program = self.build_program(src_content, options)?;
+
+        // Save binaries
+        if let Err(_) = fs::create_dir_all(binary_dest_folder) {
+             return Err(ClError::Wrapper(WrapperError::FileIOError));
+        }
+
+        if let Ok(saved_binaries) = built_program.get_binary() {
+            for (i, binary) in saved_binaries.iter().enumerate() {
+                if i >= devices.len() { break; }
+                if binary.is_empty() { continue; }
+                
+                let device = &devices[i];
+                // Ignore error if get_name fails here, preserving flow? 
+                // Using unwrap_or for robustness
+                let device_name = device.get_name().unwrap_or("unknown".to_string()).replace(" ", "_");
+                let bin_filename = format!("{}_{}_{}.bin", file_stem, device_name, i);
+                let bin_path = Path::new(binary_dest_folder).join(bin_filename);
+                
+                if let Ok(mut f) = fs::File::create(bin_path) {
+                    let _ = f.write_all(binary);
+                }
+            }
+        }
+
+        Ok(built_program)
     }
 
     /// Creates a Kernel from an already compiled program.
