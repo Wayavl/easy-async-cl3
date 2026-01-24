@@ -18,6 +18,11 @@ pub enum OutputRead<'a> {
     }
 }
 
+#[cfg(feature = "CL_VERSION_1_1")]
+unsafe impl<'a> Send for OutputRead<'a> {}
+#[cfg(feature = "CL_VERSION_1_1")]
+unsafe impl<'a> Sync for OutputRead<'a> {}
+
 /// # TaskReport
 /// 
 /// Contains the results of a task execution.
