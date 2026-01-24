@@ -33,3 +33,8 @@ pub enum KernelArg<'a> {
         arg: &'a ClPipe
     }
 }
+
+#[cfg(feature = "CL_VERSION_1_1")]
+unsafe impl<'a> Send for KernelArg<'a> {}
+#[cfg(feature = "CL_VERSION_1_1")]
+unsafe impl<'a> Sync for KernelArg<'a> {}

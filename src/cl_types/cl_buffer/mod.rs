@@ -47,6 +47,16 @@ impl ClBuffer {
 }
 
 #[cfg(feature = "CL_VERSION_1_1")]
+impl Clone for ClBuffer {
+    fn clone(&self) -> Self {
+        unsafe {
+            self.increase_reference_count();
+        }
+        Self { value: self.value }
+    }
+}
+
+#[cfg(feature = "CL_VERSION_1_1")]
 impl Drop for ClBuffer{
     fn drop(&mut self) {
         unsafe {

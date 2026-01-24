@@ -13,6 +13,12 @@ use crate::{
         releaseable::Releaseable,
     },
 };
+use std::future::Future;
+
+#[derive(Copy, Clone)]
+struct SendPtr(*mut c_void);
+unsafe impl Send for SendPtr {}
+unsafe impl Sync for SendPtr {}
 
 pub struct ClCommandQueue {
     value: *mut c_void,
@@ -81,166 +87,265 @@ impl ClCommandQueue {
     /// This is the main method for executing kernels on the GPU. Returns a future
     /// that completes when the kernel finishes.
     #[cfg(feature = "CL_VERSION_1_1")]
-    pub async fn enqueue_nd_range_kernel(
+    fn enqueue_nd_range_kernel_inner(
+        q_ptr: SendPtr,
+        k_ptr: SendPtr,
+        work_dimension: u32,
+        global_work_offset: Vec<usize>,
+        global_work_dims: Vec<usize>,
+        local_work_dims: Vec<usize>,
+        wait_ptrs: Option<Vec<SendPtr>>,
+    ) -> Result<ClEvent, ClError> {
+        let res = {
+            let wait_raw: Vec<*mut c_void> = wait_ptrs
+                .map(|v| v.iter().map(|p| p.0).collect())
+                .unwrap_or_default();
+
+            let (num_wait, wait_ptr) = if wait_raw.is_empty() {
+                (0, std::ptr::null())
+            } else {
+                (wait_raw.len() as u32, wait_raw.as_ptr())
+            };
+
+            let global_offset_ptr = if global_work_offset.is_empty() {
+                std::ptr::null()
+            } else {
+                global_work_offset.as_ptr()
+            };
+
+            let local_dims_ptr = if local_work_dims.is_empty() {
+                std::ptr::null()
+            } else {
+                local_work_dims.as_ptr()
+            };
+
+            unsafe {
+                cl3::command_queue::enqueue_nd_range_kernel(
+                    q_ptr.0,
+                    k_ptr.0,
+                    work_dimension,
+                    global_offset_ptr,
+                    global_work_dims.as_ptr(),
+                    local_dims_ptr,
+                    num_wait,
+                    wait_ptr,
+                )
+            }
+        };
+
+        Ok(ClEvent::from_ptr(
+            res.map_err(|code| ClError::Api(ApiError::get_error(code)))?,
+        ))
+    }
+
+    #[cfg(feature = "CL_VERSION_1_1")]
+    pub fn enqueue_nd_range_kernel(
         &self,
         kernel: &ClKernel,
         work_dimension: u32,
         global_work_offset: Vec<usize>,
         global_work_dims: Vec<usize>,
         local_work_dims: Vec<usize>,
-        num_events_in_wait_list: Option<u32>,
+        _num_events_in_wait_list: Option<u32>,
         event_wait_list: Option<Vec<ClEvent>>,
-    ) -> Result<ClEvent, ClError> {
-        let event_wait_list_wrapped = event_wait_list.unwrap_or(Vec::new());
-        let num_events_in_wait_list = event_wait_list_wrapped.len() as u32;
-        let event_wait_list_ptr = if num_events_in_wait_list > 0 {
-            event_wait_list_wrapped
-                .iter()
-                .map(|e| e.as_ptr())
-                .collect::<Vec<_>>()
-        } else {
-            Vec::new()
-        };
+    ) -> impl Future<Output = Result<ClEvent, ClError>> + Send + '_ {
+        let q_ptr = SendPtr(self.as_ptr());
+        let k_ptr = SendPtr(kernel.as_ptr());
 
-        let event = ClEvent::from_ptr(unsafe {
-            cl3::command_queue::enqueue_nd_range_kernel(
-                self.as_ptr(),
-                kernel.as_ptr(),
+        let wait_ptrs: Option<Vec<SendPtr>> =
+            event_wait_list.map(|v| v.iter().map(|e| SendPtr(e.as_ptr())).collect());
+
+        async move {
+            let event = Self::enqueue_nd_range_kernel_inner(
+                q_ptr,
+                k_ptr,
                 work_dimension,
-                if global_work_offset.is_empty() {
-                    std::ptr::null()
-                } else {
-                    global_work_offset.as_ptr()
-                },
-                global_work_dims.as_ptr(),
-                if local_work_dims.is_empty() {
-                    std::ptr::null()
-                } else {
-                    local_work_dims.as_ptr()
-                },
-                num_events_in_wait_list,
-                if num_events_in_wait_list > 0 {
-                    event_wait_list_ptr.as_ptr()
-                } else {
-                    std::ptr::null()
-                },
-            )
-            .map_err(|code| ClError::Api(ApiError::get_error(code)))?
-        });
-
-        event.event_future().await;
-
-        Ok(event)
+                global_work_offset,
+                global_work_dims,
+                local_work_dims,
+                wait_ptrs,
+            )?;
+            event.event_future().await;
+            Ok(event)
+        }
     }
 
     /// Reads data from a buffer on the device to host memory.
     ///
     /// This is an async operation that completes when the data transfer finishes.
     #[cfg(feature = "CL_VERSION_1_1")]
-    pub async fn enqueue_read_buffer<T: Sized>(
+    fn enqueue_read_buffer_inner(
+        q_ptr: SendPtr,
+        b_ptr: SendPtr,
+        offset: usize,
+        len: usize,
+        h_ptr: SendPtr,
+        wait_ptrs: Option<Vec<SendPtr>>,
+    ) -> Result<ClEvent, ClError> {
+        let res = {
+            let wait_raw: Vec<*mut c_void> = wait_ptrs
+                .map(|v| v.iter().map(|p| p.0).collect())
+                .unwrap_or_default();
+
+            let (num_wait, wait_ptr) = if wait_raw.is_empty() {
+                (0, null())
+            } else {
+                (wait_raw.len() as u32, wait_raw.as_ptr())
+            };
+
+            unsafe {
+                cl3::command_queue::enqueue_read_buffer(
+                    q_ptr.0,
+                    b_ptr.0,
+                    0, // CL_FALSE
+                    offset,
+                    len,
+                    h_ptr.0,
+                    num_wait,
+                    wait_ptr,
+                )
+            }
+        };
+
+        Ok(ClEvent::from_ptr(
+            res.map_err(|code| ClError::Api(ApiError::get_error(code)))?,
+        ))
+    }
+
+    #[cfg(feature = "CL_VERSION_1_1")]
+    pub fn enqueue_read_buffer<T: Sized>(
         &self,
         buffer: &ClBuffer,
         offset: Option<usize>,
         host_memory: &mut [T],
         event_wait_list: Option<Vec<ClEvent>>,
-    ) -> Result<ClEvent, ClError> {
+    ) -> impl Future<Output = Result<ClEvent, ClError>> + Send + '_ {
         let offset = offset.unwrap_or(0);
-        let event_wait_list_wrapped = event_wait_list.unwrap_or(Vec::new());
-        let event_wait_list: Vec<*mut c_void> =
-            event_wait_list_wrapped.iter().map(|f| f.as_ptr()).collect();
-        let num_events_in_wait_list = event_wait_list.len() as u32;
+        let q_ptr = SendPtr(self.as_ptr());
+        let b_ptr = SendPtr(buffer.as_ptr());
+        let h_ptr = SendPtr(host_memory.as_mut_ptr() as *mut c_void);
+        let len = host_memory.len();
 
-        let event = match num_events_in_wait_list {
-            0 => ClEvent::from_ptr(
-                unsafe {
-                    cl3::command_queue::enqueue_read_buffer(
-                        self.as_ptr(),
-                        buffer.as_ptr(),
-                        0,
-                        offset,
-                        host_memory.len(),
-                        host_memory.as_mut_ptr() as *mut c_void,
-                        num_events_in_wait_list,
-                        null(),
-                    )
-                }
-                .map_err(|code| ClError::Api(ApiError::get_error(code)))?,
-            ),
-            _ => ClEvent::from_ptr(
-                unsafe {
-                    cl3::command_queue::enqueue_read_buffer(
-                        self.as_ptr(),
-                        buffer.as_ptr(),
-                        0,
-                        offset,
-                        host_memory.len(),
-                        host_memory.as_mut_ptr() as *mut c_void,
-                        num_events_in_wait_list,
-                        event_wait_list.as_ptr(),
-                    )
-                }
-                .map_err(|code| ClError::Api(ApiError::get_error(code)))?,
-            ),
-        };
+        // Convert wait list to Send-safe SendPtrs
+        let wait_ptrs: Option<Vec<SendPtr>> =
+            event_wait_list.map(|v| v.iter().map(|e| SendPtr(e.as_ptr())).collect());
 
-        event.event_future().await;
-        Ok(event)
+        async move {
+            let event = Self::enqueue_read_buffer_inner(q_ptr, b_ptr, offset, len, h_ptr, wait_ptrs)?;
+            event.event_future().await;
+            Ok(event)
+        }
     }
 
     #[cfg(feature = "CL_VERSION_1_1")]
-    pub async fn enqueue_read_buffer_raw(
+    fn enqueue_read_buffer_raw_inner(
+        q_ptr: SendPtr,
+        b_ptr: SendPtr,
+        offset: usize,
+        size: usize,
+        h_ptr: SendPtr,
+        wait_ptrs: Option<Vec<SendPtr>>,
+    ) -> Result<ClEvent, ClError> {
+        let res = {
+            let wait_raw: Vec<*mut c_void> = wait_ptrs
+                .map(|v| v.iter().map(|p| p.0).collect())
+                .unwrap_or_default();
+
+            let (num_wait, wait_ptr) = if wait_raw.is_empty() {
+                (0, null())
+            } else {
+                (wait_raw.len() as u32, wait_raw.as_ptr())
+            };
+
+            unsafe {
+                cl3::command_queue::enqueue_read_buffer(
+                    q_ptr.0,
+                    b_ptr.0,
+                    0, // CL_FALSE
+                    offset,
+                    size,
+                    h_ptr.0,
+                    num_wait,
+                    wait_ptr,
+                )
+            }
+        };
+
+        Ok(ClEvent::from_ptr(
+            res.map_err(|code| ClError::Api(ApiError::get_error(code)))?,
+        ))
+    }
+
+    #[cfg(feature = "CL_VERSION_1_1")]
+    pub fn enqueue_read_buffer_raw(
         &self,
         buffer: &ClBuffer,
         offset: Option<usize>,
         host_ptr: *mut c_void,
         size: usize,
         event_wait_list: Option<Vec<ClEvent>>,
-    ) -> Result<ClEvent, ClError> {
+    ) -> impl Future<Output = Result<ClEvent, ClError>> + Send + '_ {
         let offset = offset.unwrap_or(0);
-        let event_wait_list_wrapped = event_wait_list.unwrap_or(Vec::new());
-        let event_wait_list: Vec<*mut c_void> =
-            event_wait_list_wrapped.iter().map(|f| f.as_ptr()).collect();
-        let num_events_in_wait_list = event_wait_list.len() as u32;
+        let q_ptr = SendPtr(self.as_ptr());
+        let b_ptr = SendPtr(buffer.as_ptr());
+        let h_ptr = SendPtr(host_ptr);
 
-        let event = match num_events_in_wait_list {
-            0 => ClEvent::from_ptr(
-                unsafe {
-                    cl3::command_queue::enqueue_read_buffer(
-                        self.as_ptr(),
-                        buffer.as_ptr(),
-                        0,
-                        offset,
-                        size,
-                        host_ptr,
-                        num_events_in_wait_list,
-                        null(),
-                    )
-                }
-                .map_err(|code| ClError::Api(ApiError::get_error(code)))?,
-            ),
-            _ => ClEvent::from_ptr(
-                unsafe {
-                    cl3::command_queue::enqueue_read_buffer(
-                        self.as_ptr(),
-                        buffer.as_ptr(),
-                        0,
-                        offset,
-                        size,
-                        host_ptr,
-                        num_events_in_wait_list,
-                        event_wait_list.as_ptr(),
-                    )
-                }
-                .map_err(|code| ClError::Api(ApiError::get_error(code)))?,
-            ),
+        // Convert wait list to Send-safe SendPtrs
+        let wait_ptrs: Option<Vec<SendPtr>> =
+            event_wait_list.map(|v| v.iter().map(|e| SendPtr(e.as_ptr())).collect());
+
+        async move {
+            let event = Self::enqueue_read_buffer_raw_inner(q_ptr, b_ptr, offset, size, h_ptr, wait_ptrs)?;
+            event.event_future().await;
+            Ok(event)
+        }
+    }
+
+    #[cfg(feature = "CL_VERSION_1_1")]
+    fn read_image_raw_inner(
+        q_ptr: SendPtr,
+        i_ptr: SendPtr,
+        origin: [usize; 3],
+        region: [usize; 3],
+        row_pitch: usize,
+        slice_pitch: usize,
+        b_ptr: SendPtr,
+        wait_ptrs: Option<Vec<SendPtr>>,
+    ) -> Result<ClEvent, ClError> {
+        let res = {
+            let wait_raw: Vec<*mut c_void> = wait_ptrs
+                .map(|v| v.iter().map(|p| p.0).collect())
+                .unwrap_or_default();
+
+            let (num_wait, wait_ptr) = if wait_raw.is_empty() {
+                (0, null())
+            } else {
+                (wait_raw.len() as u32, wait_raw.as_ptr())
+            };
+
+            unsafe {
+                cl3::command_queue::enqueue_read_image(
+                    q_ptr.0,
+                    i_ptr.0,
+                    0, // CL_FALSE
+                    origin.as_ptr(),
+                    region.as_ptr(),
+                    row_pitch,
+                    slice_pitch,
+                    b_ptr.0,
+                    num_wait,
+                    wait_ptr,
+                )
+            }
         };
 
-        event.event_future().await;
-        Ok(event)
+        Ok(ClEvent::from_ptr(
+            res.map_err(|code| ClError::Api(ApiError::get_error(code)))?,
+        ))
     }
 
     #[cfg(feature = "CL_VERSION_1_1")]
-    pub async fn read_image_raw(
+    pub fn read_image_raw(
         &self,
         image: &ClImage,
         origin: [usize; 3],
@@ -249,48 +354,32 @@ impl ClCommandQueue {
         slice_pitch: usize,
         buffer: *mut c_void,
         event_wait_list: Option<Vec<ClEvent>>,
-    ) -> Result<ClEvent, ClError> {
-        let raw = unsafe {
-            match event_wait_list {
-                Some(v) => {
-                    let unwrapped_events: Vec<*mut c_void> = v.iter().map(|f| f.as_ptr()).collect();
-                    cl3::command_queue::enqueue_read_image(
-                        self.as_ptr(),
-                        image.as_ptr(),
-                        0,
-                        origin.as_ptr(),
-                        region.as_ptr(),
-                        row_pitch,
-                        slice_pitch,
-                        buffer,
-                        unwrapped_events.len() as u32,
-                        unwrapped_events.as_ptr(),
-                    )
-                }
-                None => cl3::command_queue::enqueue_read_image(
-                    self.as_ptr(),
-                    image.as_ptr(),
-                    0,
-                    origin.as_ptr(),
-                    region.as_ptr(),
-                    row_pitch,
-                    slice_pitch,
-                    buffer,
-                    0,
-                    null(),
-                ),
-            }
+    ) -> impl Future<Output = Result<ClEvent, ClError>> + Send + '_ {
+        let q_ptr = SendPtr(self.as_ptr());
+        let i_ptr = SendPtr(image.as_ptr());
+        let b_ptr = SendPtr(buffer);
+
+        let wait_ptrs: Option<Vec<SendPtr>> =
+            event_wait_list.map(|v| v.iter().map(|e| SendPtr(e.as_ptr())).collect());
+
+        async move {
+            let event = Self::read_image_raw_inner(
+                q_ptr,
+                i_ptr,
+                origin,
+                region,
+                row_pitch,
+                slice_pitch,
+                b_ptr,
+                wait_ptrs,
+            )?;
+            event.event_future().await;
+            Ok(event)
         }
-        .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
-
-        let wrapped_event = ClEvent::from_ptr(raw);
-        wrapped_event.event_future().await;
-
-        Ok(wrapped_event)
     }
 
     #[cfg(feature = "CL_VERSION_1_1")]
-    pub async fn read_image(
+    pub fn read_image(
         &self,
         image: ClImage,
         origin: Vec<usize>,
@@ -299,48 +388,75 @@ impl ClCommandQueue {
         slice_pitch: usize,
         buffer: *mut c_void,
         event_wait_list: Option<Vec<ClEvent>>,
+    ) -> impl Future<Output = Result<ClEvent, ClError>> + Send + '_ {
+        let q_ptr = SendPtr(self.as_ptr());
+        let i_ptr = SendPtr(image.as_ptr());
+        let b_ptr = SendPtr(buffer);
+
+        let wait_ptrs: Option<Vec<SendPtr>> =
+            event_wait_list.map(|v| v.iter().map(|e| SendPtr(e.as_ptr())).collect());
+
+        async move {
+            let event = Self::read_image_raw_inner(
+                q_ptr,
+                i_ptr,
+                origin.as_slice().try_into().unwrap_or([0, 0, 0]),
+                region.as_slice().try_into().unwrap_or([0, 0, 0]),
+                row_pitch,
+                slice_pitch,
+                b_ptr,
+                wait_ptrs,
+            )?;
+            event.event_future().await;
+            Ok(event)
+        }
+    }
+
+    #[cfg(feature = "CL_VERSION_1_1")]
+    fn write_image_raw_inner(
+        q_ptr: SendPtr,
+        i_ptr: SendPtr,
+        origin: [usize; 3],
+        region: [usize; 3],
+        row_pitch: usize,
+        slice_pitch: usize,
+        b_ptr: SendPtr,
+        wait_ptrs: Option<Vec<SendPtr>>,
     ) -> Result<ClEvent, ClError> {
-        let raw = unsafe {
-            match event_wait_list {
-                Some(v) => {
-                    let unwrapped_events: Vec<*mut c_void> = v.iter().map(|f| f.as_ptr()).collect();
-                    cl3::command_queue::enqueue_read_image(
-                        self.as_ptr(),
-                        image.as_ptr(),
-                        0,
-                        origin.as_ptr(),
-                        region.as_ptr(),
-                        row_pitch,
-                        slice_pitch,
-                        buffer,
-                        unwrapped_events.len() as u32,
-                        unwrapped_events.as_ptr(),
-                    )
-                }
-                None => cl3::command_queue::enqueue_read_image(
-                    self.as_ptr(),
-                    image.as_ptr(),
-                    0,
+        let res = {
+            let wait_raw: Vec<*mut c_void> = wait_ptrs
+                .map(|v| v.iter().map(|p| p.0).collect())
+                .unwrap_or_default();
+
+            let (num_wait, wait_ptr) = if wait_raw.is_empty() {
+                (0, null())
+            } else {
+                (wait_raw.len() as u32, wait_raw.as_ptr())
+            };
+
+            unsafe {
+                cl3::command_queue::enqueue_write_image(
+                    q_ptr.0,
+                    i_ptr.0,
+                    0, // CL_FALSE
                     origin.as_ptr(),
                     region.as_ptr(),
                     row_pitch,
                     slice_pitch,
-                    buffer,
-                    0,
-                    null(),
-                ),
+                    b_ptr.0,
+                    num_wait,
+                    wait_ptr,
+                )
             }
-        }
-        .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
+        };
 
-        let wrapped_event = ClEvent::from_ptr(raw);
-        wrapped_event.event_future().await;
-
-        Ok(wrapped_event)
+        Ok(ClEvent::from_ptr(
+            res.map_err(|code| ClError::Api(ApiError::get_error(code)))?,
+        ))
     }
 
     #[cfg(feature = "CL_VERSION_1_1")]
-    pub async fn write_image_raw(
+    pub fn write_image_raw(
         &self,
         image: &ClImage,
         origin: [usize; 3],
@@ -349,48 +465,32 @@ impl ClCommandQueue {
         slice_pitch: usize,
         buffer: *mut c_void,
         event_wait_list: Option<Vec<ClEvent>>,
-    ) -> Result<ClEvent, ClError> {
-        let raw = unsafe {
-            match event_wait_list {
-                Some(v) => {
-                    let unwrapped_events: Vec<*mut c_void> = v.iter().map(|f| f.as_ptr()).collect();
-                    cl3::command_queue::enqueue_write_image(
-                        self.as_ptr(),
-                        image.as_ptr(),
-                        0,
-                        origin.as_ptr(),
-                        region.as_ptr(),
-                        row_pitch,
-                        slice_pitch,
-                        buffer,
-                        unwrapped_events.len() as u32,
-                        unwrapped_events.as_ptr(),
-                    )
-                }
-                None => cl3::command_queue::enqueue_write_image(
-                    self.as_ptr(),
-                    image.as_ptr(),
-                    0,
-                    origin.as_ptr(),
-                    region.as_ptr(),
-                    row_pitch,
-                    slice_pitch,
-                    buffer,
-                    0,
-                    null(),
-                ),
-            }
+    ) -> impl Future<Output = Result<ClEvent, ClError>> + Send + '_ {
+        let q_ptr = SendPtr(self.as_ptr());
+        let i_ptr = SendPtr(image.as_ptr());
+        let b_ptr = SendPtr(buffer);
+
+        let wait_ptrs: Option<Vec<SendPtr>> =
+            event_wait_list.map(|v| v.iter().map(|e| SendPtr(e.as_ptr())).collect());
+
+        async move {
+            let event = Self::write_image_raw_inner(
+                q_ptr,
+                i_ptr,
+                origin,
+                region,
+                row_pitch,
+                slice_pitch,
+                b_ptr,
+                wait_ptrs,
+            )?;
+            event.event_future().await;
+            Ok(event)
         }
-        .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
-
-        let wrapped_event = ClEvent::from_ptr(raw);
-        wrapped_event.event_future().await;
-
-        Ok(wrapped_event)
     }
 
     #[cfg(feature = "CL_VERSION_1_1")]
-    pub async fn write_image(
+    pub fn write_image(
         &self,
         image: ClImage,
         origin: Vec<usize>,
@@ -399,86 +499,88 @@ impl ClCommandQueue {
         slice_pitch: usize,
         buffer: *mut c_void,
         event_wait_list: Option<Vec<ClEvent>>,
-    ) -> Result<ClEvent, ClError> {
-        let raw = unsafe {
-            match event_wait_list {
-                Some(v) => {
-                    let unwrapped_events: Vec<*mut c_void> = v.iter().map(|f| f.as_ptr()).collect();
-                    cl3::command_queue::enqueue_write_image(
-                        self.as_ptr(),
-                        image.as_ptr(),
-                        0,
-                        origin.as_ptr(),
-                        region.as_ptr(),
-                        row_pitch,
-                        slice_pitch,
-                        buffer,
-                        unwrapped_events.len() as u32,
-                        unwrapped_events.as_ptr(),
-                    )
-                }
-                None => cl3::command_queue::enqueue_write_image(
-                    self.as_ptr(),
-                    image.as_ptr(),
-                    0,
-                    origin.as_ptr(),
-                    region.as_ptr(),
-                    row_pitch,
-                    slice_pitch,
-                    buffer,
-                    0,
-                    null(),
-                ),
-            }
+    ) -> impl Future<Output = Result<ClEvent, ClError>> + Send + '_ {
+        let q_ptr = SendPtr(self.as_ptr());
+        let i_ptr = SendPtr(image.as_ptr());
+        let b_ptr = SendPtr(buffer);
+
+        let wait_ptrs: Option<Vec<SendPtr>> =
+            event_wait_list.map(|v| v.iter().map(|e| SendPtr(e.as_ptr())).collect());
+
+        async move {
+            let event = Self::write_image_raw_inner(
+                q_ptr,
+                i_ptr,
+                origin.as_slice().try_into().unwrap_or([0, 0, 0]),
+                region.as_slice().try_into().unwrap_or([0, 0, 0]),
+                row_pitch,
+                slice_pitch,
+                b_ptr,
+                wait_ptrs,
+            )?;
+            event.event_future().await;
+            Ok(event)
         }
-        .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
-
-        let wrapped_event = ClEvent::from_ptr(raw);
-        wrapped_event.event_future().await;
-
-        Ok(wrapped_event)
     }
 
-    pub async fn write_buffer(
+    fn write_buffer_inner(
+        q_ptr: SendPtr,
+        b_ptr: SendPtr,
+        offset: usize,
+        byte_size: usize,
+        h_ptr: SendPtr,
+        wait_ptrs: Option<Vec<SendPtr>>,
+    ) -> Result<ClEvent, ClError> {
+        let res = {
+            let wait_raw: Vec<*mut c_void> = wait_ptrs
+                .map(|v| v.iter().map(|p| p.0).collect())
+                .unwrap_or_default();
+
+            let (num_wait, wait_ptr) = if wait_raw.is_empty() {
+                (0, null())
+            } else {
+                (wait_raw.len() as u32, wait_raw.as_ptr())
+            };
+
+            unsafe {
+                cl3::command_queue::enqueue_write_buffer(
+                    q_ptr.0,
+                    b_ptr.0,
+                    0, // CL_FALSE (Non-blocking)
+                    offset,
+                    byte_size,
+                    h_ptr.0,
+                    num_wait,
+                    wait_ptr,
+                )
+            }
+        };
+
+        Ok(ClEvent::from_ptr(
+            res.map_err(|code| ClError::Api(ApiError::get_error(code)))?,
+        ))
+    }
+
+    pub fn write_buffer(
         &self,
         buffer: &ClBuffer,
         host_ptr: *mut c_void,
         offset: usize,
         byte_size: usize,
         event_wait_list: Option<Vec<ClEvent>>,
-    ) -> Result<ClEvent, ClError> {
-        let raw_event = unsafe {
-            match event_wait_list {
-                Some(v) => {
-                    let unwrapped_events: Vec<*mut c_void> = v.iter().map(|f| f.as_ptr()).collect();
-                    cl3::command_queue::enqueue_write_buffer(
-                        self.as_ptr(),
-                        buffer.as_ptr(),
-                        0, // CL_FALSE (Non-blocking)
-                        offset,
-                        byte_size,
-                        host_ptr,
-                        unwrapped_events.len() as u32,
-                        unwrapped_events.as_ptr(),
-                    )
-                }
-                None => cl3::command_queue::enqueue_write_buffer(
-                    self.as_ptr(),
-                    buffer.as_ptr(),
-                    0, // CL_FALSE (Non-blocking)
-                    offset,
-                    byte_size,
-                    host_ptr,
-                    0,
-                    null(),
-                ),
-            }
-        }
-        .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
+    ) -> impl Future<Output = Result<ClEvent, ClError>> + Send + '_ {
+        let q_ptr = SendPtr(self.as_ptr());
+        let b_ptr = SendPtr(buffer.as_ptr());
+        let h_ptr = SendPtr(host_ptr);
 
-        let event = ClEvent::from_ptr(raw_event);
-        event.event_future().await;
-        Ok(event)
+        let wait_ptrs: Option<Vec<SendPtr>> =
+            event_wait_list.map(|v| v.iter().map(|e| SendPtr(e.as_ptr())).collect());
+
+        async move {
+            let event = Self::write_buffer_inner(q_ptr, b_ptr, offset, byte_size, h_ptr, wait_ptrs)?;
+            event.event_future().await;
+            Ok(event)
+        }
     }
 
     #[cfg(feature = "CL_VERSION_1_1")]
