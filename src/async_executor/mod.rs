@@ -1,10 +1,11 @@
 mod task_builder;
 mod kernel_arg;
+pub mod pipeline_task;
 use std::os::raw::c_void;
 use std::sync::Arc;
 
 use crate::{
-    async_executor::task_builder::TaskBuilder, 
+    async_executor::{task_builder::TaskBuilder, pipeline_task::PipelineBuilder}, 
     cl_types::{
         cl_buffer::ClBuffer,
         cl_event::ClEvent,
@@ -225,6 +226,14 @@ impl AsyncExecutor {
     /// a `TaskBuilder` to configure the arguments and work size.
     pub fn create_task(&self, kernel: ClKernel) -> TaskBuilder<'_> {
         TaskBuilder::new(self, kernel)
+    }
+
+    /// Creates a pipeline to execute multiple kernels sequentially.
+    /// 
+    /// This is ideal for cases where the output of one kernel is the input of another,
+    /// as it manages dependencies (events) automatically.
+    pub fn create_pipeline(&self) -> PipelineBuilder<'_> {
+        PipelineBuilder::new(self)
     }
 
     //
@@ -461,8 +470,20 @@ impl AsyncExecutor {
         let compute_units = device.get_max_compute_units()?;
         let clock_frequency = device.get_max_clock_frequency()?;
         let memory = device.get_global_mem_size()? / (1024 * 1024);
+        let device_type = device.get_device_type()?;
 
-        Ok(((compute_units as u64 * clock_frequency as u64) / 100) + (memory / 10))
+        let mut score = ((compute_units as u64 * clock_frequency as u64) / 100) + (memory / 10);
+
+        // Core improvement: Prioritize GPUs heavily.
+        // A single weak GPU is usually better for OpenCL tasks than a powerful CPU
+        // due to architectural differences and driver optimizations.
+        if (device_type & cl3::device::CL_DEVICE_TYPE_GPU) != 0 {
+            score += 1_000_000;
+        } else if (device_type & cl3::device::CL_DEVICE_TYPE_ACCELERATOR) != 0 {
+            score += 500_000;
+        }
+
+        Ok(score)
     }
 }
 

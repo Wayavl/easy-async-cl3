@@ -11,6 +11,7 @@
 //! - **Modern OpenCL features**: Support for OpenCL 1.1 through 3.0
 
 pub mod async_executor;
+pub use async_executor::pipeline_task::{PipelineBuilder, PipelineReport};
 #[allow(unused)]
 #[allow(dead_code)]
 pub mod cl_types;
