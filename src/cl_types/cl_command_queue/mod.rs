@@ -30,14 +30,13 @@ impl ClCommandQueue {
     }
 
     /// Creates a command queue (deprecated in OpenCL 2.0+).
-    /// 
+    ///
     /// Use `create_command_queue_with_properties` for OpenCL 2.0+ for more flexibility.
     #[cfg(feature = "CL_VERSION_1_1")]
     #[deprecated(
         since = "CL_VERSION_2_0",
         note = "Use create_command_queue_with_properties instead"
     )]
-
     #[allow(deprecated)]
     pub fn create_command_queue(
         context: &ClContext,
@@ -55,7 +54,7 @@ impl ClCommandQueue {
     }
 
     /// Creates a command queue with properties (OpenCL 2.0+).
-    /// 
+    ///
     /// Allows specifying properties like out-of-order execution, profiling, etc.
     #[cfg(feature = "CL_VERSION_2_0")]
     pub fn create_command_queue_with_properties(
@@ -78,7 +77,7 @@ impl ClCommandQueue {
     }
 
     /// Enqueues an N-dimensional kernel execution.
-    /// 
+    ///
     /// This is the main method for executing kernels on the GPU. Returns a future
     /// that completes when the kernel finishes.
     #[cfg(feature = "CL_VERSION_1_1")]
@@ -108,9 +107,17 @@ impl ClCommandQueue {
                 self.as_ptr(),
                 kernel.as_ptr(),
                 work_dimension,
-                if global_work_offset.is_empty() { std::ptr::null() } else { global_work_offset.as_ptr() },
+                if global_work_offset.is_empty() {
+                    std::ptr::null()
+                } else {
+                    global_work_offset.as_ptr()
+                },
                 global_work_dims.as_ptr(),
-                if local_work_dims.is_empty() { std::ptr::null() } else { local_work_dims.as_ptr() },
+                if local_work_dims.is_empty() {
+                    std::ptr::null()
+                } else {
+                    local_work_dims.as_ptr()
+                },
                 num_events_in_wait_list,
                 if num_events_in_wait_list > 0 {
                     event_wait_list_ptr.as_ptr()
@@ -127,7 +134,7 @@ impl ClCommandQueue {
     }
 
     /// Reads data from a buffer on the device to host memory.
-    /// 
+    ///
     /// This is an async operation that completes when the data transfer finishes.
     #[cfg(feature = "CL_VERSION_1_1")]
     pub async fn enqueue_read_buffer<T: Sized>(
@@ -333,6 +340,56 @@ impl ClCommandQueue {
     }
 
     #[cfg(feature = "CL_VERSION_1_1")]
+    pub async fn write_image_raw(
+        &self,
+        image: &ClImage,
+        origin: [usize; 3],
+        region: [usize; 3],
+        row_pitch: usize,
+        slice_pitch: usize,
+        buffer: *mut c_void,
+        event_wait_list: Option<Vec<ClEvent>>,
+    ) -> Result<ClEvent, ClError> {
+        let raw = unsafe {
+            match event_wait_list {
+                Some(v) => {
+                    let unwrapped_events: Vec<*mut c_void> = v.iter().map(|f| f.as_ptr()).collect();
+                    cl3::command_queue::enqueue_write_image(
+                        self.as_ptr(),
+                        image.as_ptr(),
+                        0,
+                        origin.as_ptr(),
+                        region.as_ptr(),
+                        row_pitch,
+                        slice_pitch,
+                        buffer,
+                        unwrapped_events.len() as u32,
+                        unwrapped_events.as_ptr(),
+                    )
+                }
+                None => cl3::command_queue::enqueue_write_image(
+                    self.as_ptr(),
+                    image.as_ptr(),
+                    0,
+                    origin.as_ptr(),
+                    region.as_ptr(),
+                    row_pitch,
+                    slice_pitch,
+                    buffer,
+                    0,
+                    null(),
+                ),
+            }
+        }
+        .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
+
+        let wrapped_event = ClEvent::from_ptr(raw);
+        wrapped_event.event_future().await;
+
+        Ok(wrapped_event)
+    }
+
+    #[cfg(feature = "CL_VERSION_1_1")]
     pub async fn write_image(
         &self,
         image: ClImage,
@@ -380,6 +437,48 @@ impl ClCommandQueue {
         wrapped_event.event_future().await;
 
         Ok(wrapped_event)
+    }
+
+    pub async fn write_buffer(
+        &self,
+        buffer: &ClBuffer,
+        host_ptr: *mut c_void,
+        offset: usize,
+        byte_size: usize,
+        event_wait_list: Option<Vec<ClEvent>>,
+    ) -> Result<ClEvent, ClError> {
+        let raw_event = unsafe {
+            match event_wait_list {
+                Some(v) => {
+                    let unwrapped_events: Vec<*mut c_void> = v.iter().map(|f| f.as_ptr()).collect();
+                    cl3::command_queue::enqueue_write_buffer(
+                        self.as_ptr(),
+                        buffer.as_ptr(),
+                        0, // CL_FALSE (Non-blocking)
+                        offset,
+                        byte_size,
+                        host_ptr,
+                        unwrapped_events.len() as u32,
+                        unwrapped_events.as_ptr(),
+                    )
+                }
+                None => cl3::command_queue::enqueue_write_buffer(
+                    self.as_ptr(),
+                    buffer.as_ptr(),
+                    0, // CL_FALSE (Non-blocking)
+                    offset,
+                    byte_size,
+                    host_ptr,
+                    0,
+                    null(),
+                ),
+            }
+        }
+        .map_err(|code| ClError::Api(ApiError::get_error(code)))?;
+
+        let event = ClEvent::from_ptr(raw_event);
+        event.event_future().await;
+        Ok(event)
     }
 
     #[cfg(feature = "CL_VERSION_1_1")]

@@ -242,4 +242,18 @@ mod tests {
         assert_eq!(data[0], 15.0);
         Ok(())
     }
+
+    async fn test_write_buffer() -> Result<(), ClError> {
+        let executor = crate::async_executor::AsyncExecutor::new_best_platform()?;
+        
+        let program = executor.build_program("kernel void add(global float* a, global float* b) { a[get_global_id(0)] += b[get_global_id(0)]; }".to_string(), None)?;
+        let kernel = executor.create_kernel(&program, "add")?;
+    
+        let mut data: Vec<f32> = vec![10.0; 1024];
+        let other: Vec<f32> = vec![5.0; 1024];
+        let buf_a = executor.create_buffer(&[MemoryFlags::ReadWrite, MemoryFlags::CopyHostPtr], 1024 * 4, data.as_mut_ptr() as *mut c_void)?;
+        let buf_b = executor.create_buffer(&[MemoryFlags::ReadOnly, MemoryFlags::CopyHostPtr], 1024 * 4, other.as_ptr() as *mut c_void)?;
+        
+        Ok(())
+    }
 }

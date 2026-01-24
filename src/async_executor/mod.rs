@@ -7,6 +7,7 @@ use crate::{
     async_executor::task_builder::TaskBuilder, 
     cl_types::{
         cl_buffer::ClBuffer,
+        cl_event::ClEvent,
         cl_command_queue::{ClCommandQueue, command_queue_parameters::{CommandQueueProperties, Version20}},
         cl_context::ClContext, 
         cl_device::ClDevice, 
@@ -364,11 +365,88 @@ impl AsyncExecutor {
         ClSvmBuffer::<T>::new(&self.context, &flags.to_vec(), len, 0)
     }
 
+    /// Reads data from a buffer to host memory.
+    /// Uses the most powerful GPU available to perform the copy.
+    pub async fn read_buffer<T: Sized>(
+        &self,
+        buffer: &ClBuffer,
+        host_memory: &mut [T],
+    ) -> Result<ClEvent, ClError> {
+        let queue = self.get_optimal_queue();
+        queue.enqueue_read_buffer(buffer, None, host_memory, None).await
+    }
+
+    /// Writes data from host memory to a buffer.
+    /// Uses the most powerful GPU available to perform the copy.
+    pub async fn write_buffer<T: Sized>(
+        &self,
+        buffer: &ClBuffer,
+        host_memory: &mut [T],
+    ) -> Result<ClEvent, ClError> {
+         let queue = self.get_optimal_queue();
+         let size = host_memory.len() * std::mem::size_of::<T>();
+         queue.write_buffer(buffer, host_memory.as_mut_ptr() as *mut c_void, 0, size, None).await
+    }
+    
+    /// Reads data from an image to host memory.
+    #[cfg(feature = "CL_VERSION_1_2")]
+    pub async fn read_image<T: Sized>(
+        &self,
+        image: &ClImage,
+        host_memory: &mut [T],
+        origin: [usize; 3],
+        region: [usize; 3],
+    ) -> Result<ClEvent, ClError> {
+        let queue = self.get_optimal_queue();
+        queue.read_image_raw(
+            image, 
+            origin, 
+            region, 
+            0, 
+            0, 
+            host_memory.as_mut_ptr() as *mut c_void, 
+            None
+        ).await
+    }
+
+    /// Writes data from host memory to an image.
+    #[cfg(feature = "CL_VERSION_1_2")]
+    pub async fn write_image<T: Sized>(
+        &self,
+         image: &ClImage,
+         host_memory: &mut [T],
+         origin: [usize; 3],
+         region: [usize; 3],
+    ) -> Result<ClEvent, ClError> {
+        let queue = self.get_optimal_queue();
+        queue.write_image_raw(
+            image,
+            origin,
+            region,
+            0,
+            0,
+            host_memory.as_mut_ptr() as *mut c_void,
+            None
+        ).await
+    }
+
     //
     //
     // Utils
     //
     //
+    fn get_optimal_queue(&self) -> &ClCommandQueue {
+        let mut max_weight = 0;
+        let mut idx = 0;
+        for (i, &weight) in self.weights.iter().enumerate() {
+            if weight > max_weight {
+                max_weight = weight;
+                idx = i;
+            }
+        }
+        &self.queues[idx]
+    }
+
     fn measure_platform_capacity(platform: &ClPlatform) -> Result<u64, ClError> {
         let mut score: u64 = 0;
 
