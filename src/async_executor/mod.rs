@@ -224,7 +224,7 @@ impl AsyncExecutor {
     /// This is the entry point for the declarative workflow.
     /// It receives a `ClKernel` (the function that will run on the GPU) and returns
     /// a `TaskBuilder` to configure the arguments and work size.
-    pub fn create_task(&self, kernel: ClKernel) -> TaskBuilder<'_> {
+    pub fn create_task<'a>(&'a self, kernel: &'a ClKernel) -> TaskBuilder<'a> {
         TaskBuilder::new(self, kernel)
     }
 

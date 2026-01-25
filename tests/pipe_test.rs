@@ -76,7 +76,7 @@ async fn test_pipes_producer_consumer() -> Result<(), ClError> {
 
     println!("Ejecutando Producer...");
     executor
-        .create_task(producer_kernel)
+        .create_task(&producer_kernel)
         .arg_pipe(0, &pipe)
         .arg_scalar(1, test_value)
         .global_work_dims(1, 1, 1)
@@ -85,7 +85,7 @@ async fn test_pipes_producer_consumer() -> Result<(), ClError> {
 
     println!("Ejecutando Consumer...");
     executor
-        .create_task(consumer_kernel)
+        .create_task(&consumer_kernel)
         .arg_pipe(0, &pipe)
         .arg_buffer(1, &result_buffer)
         .global_work_dims(1, 1, 1)

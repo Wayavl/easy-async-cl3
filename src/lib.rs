@@ -161,7 +161,7 @@ mod tests {
         let buffer_b = executor.create_buffer(&[MemoryFlags::ReadOnly, MemoryFlags::CopyHostPtr], size * 4, b.as_mut_ptr() as *mut c_void)?;
 
         let report = time_it!("Task execution (AsyncExecutor)", {
-            executor.create_task(kernel)
+            executor.create_task(&kernel)
                 .arg_buffer(0, &buffer_a)
                 .arg_buffer(1, &buffer_b)
                 .global_work_dims(size, 1, 1)
@@ -197,7 +197,7 @@ mod tests {
             
             let executor_clone = executor.clone();
             tasks.push(async move {
-                executor_clone.create_task(kernel)
+                executor_clone.create_task(&kernel)
                     .arg_buffer(0, &buf)
                     .arg_buffer(1, &buf_b)
                     .global_work_dims(1024, 1, 1)
@@ -231,7 +231,7 @@ mod tests {
         let buf_b = executor.create_buffer(&[MemoryFlags::ReadOnly, MemoryFlags::CopyHostPtr], 1024 * 4, other.as_ptr() as *mut c_void)?;
         
         // 4. Run declaratively
-        executor.create_task(kernel)
+        executor.create_task(&kernel)
             .arg_buffer(0, &buf_a)
             .arg_buffer(1, &buf_b)
             .global_work_dims(1024, 1, 1)

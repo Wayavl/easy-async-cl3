@@ -64,7 +64,7 @@ impl TaskReport {
 #[cfg(feature = "CL_VERSION_1_1")]
 pub struct TaskBuilder<'a> {
     async_executor: &'a AsyncExecutor,
-    kernel: ClKernel,
+    kernel: &'a ClKernel,
     kernel_args: Vec<KernelArg<'a>>,
     global_work_dims: Option<[usize; 3]>,
     global_work_offset: Option<[usize; 3]>,
@@ -76,7 +76,7 @@ pub struct TaskBuilder<'a> {
 
 
 impl<'a> TaskBuilder<'a> {
-    pub fn new(async_executor: &'a AsyncExecutor, kernel: ClKernel) -> Self {
+    pub fn new(async_executor: &'a AsyncExecutor, kernel: &'a ClKernel) -> Self {
         Self {
             async_executor,
             kernel,
@@ -289,7 +289,7 @@ impl<'a> TaskBuilder<'a> {
 
             let g_offset_trimmed = g_offset[..work_dim].to_vec();
             let g_dims_trimmed = g_dims[..work_dim].to_vec();
-            let kernel_clone = self.kernel.clone();
+            let kernel_ref = self.kernel;
             let queue = self.async_executor.queues[i].clone();
             let wait_list = self.wait_list.clone();
 
@@ -304,7 +304,7 @@ impl<'a> TaskBuilder<'a> {
                     let device = devices[i].clone();
                     if version >= OpenCLVersion::V2_0 && device.get_non_uniform_work_group_support().unwrap_or(false) {
                         Vec::new() // NULL will let the driver decide with non-uniform support
-                    } else if let Ok(preferred) = kernel_clone.get_work_group_size(device) {
+                    } else if let Ok(preferred) = kernel_ref.get_work_group_size(device) {
                         // For simplicity, if 1D we use the preferred size
                         if work_dim == 1 {
                              vec![preferred]
@@ -321,7 +321,7 @@ impl<'a> TaskBuilder<'a> {
 
             futures.push(async move {
                 let event = queue.enqueue_nd_range_kernel(
-                    &kernel_clone,
+                    kernel_ref,
                     work_dim as u32,
                     g_offset_trimmed,
                     g_dims_trimmed,

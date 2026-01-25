@@ -33,7 +33,7 @@ async fn guide_01_vector_addition() -> Result<(), ClError> {
         data_b.as_ptr() as *mut c_void
     )?;
 
-    executor.create_task(kernel)
+    executor.create_task(&kernel)
         .arg_buffer(0, &buf_a)
         .arg_buffer(1, &buf_b)
         .global_work_dims(size, 1, 1) // We use global, but don't specify local...
@@ -63,7 +63,7 @@ async fn guide_02_svm_basics() -> Result<(), ClError> {
     let size = 512;
     let mut svm_buffer = executor.create_svm_buffer::<f32>(&[MemoryFlags::ReadWrite], size)?;
 
-    executor.create_task(kernel)
+    executor.create_task(&kernel)
         .arg_svm(0, &svm_buffer)
         .global_work_dims(size, 1, 1)
         .run()

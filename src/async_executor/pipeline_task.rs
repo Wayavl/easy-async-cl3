@@ -17,7 +17,7 @@ use futures;
 /// Represents a single kernel execution in a pipeline.
 #[cfg(feature = "CL_VERSION_1_1")]
 pub struct PipelineStage<'a> {
-    pub(crate) kernel: ClKernel,
+    pub(crate) kernel: &'a ClKernel,
     pub(crate) kernel_args: Vec<KernelArg<'a>>,
     pub(crate) global_work_dims: [usize; 3],
     pub(crate) global_work_offset: [usize; 3],
@@ -60,7 +60,7 @@ impl<'a> PipelineBuilder<'a> {
     }
 
     /// Starts defining a new stage in the pipeline.
-    pub fn add_stage(self, kernel: ClKernel, x: usize, y: usize, z: usize) -> StageBuilder<'a> {
+    pub fn add_stage(self, kernel: &'a ClKernel, x: usize, y: usize, z: usize) -> StageBuilder<'a> {
         StageBuilder {
             pipeline_builder: self,
             kernel,
@@ -142,7 +142,7 @@ impl<'a> PipelineBuilder<'a> {
             let g_offset_trimmed = vec![g_offset, stage.global_work_offset[1], stage.global_work_offset[2]][..work_dim].to_vec();
             let g_dims_trimmed = vec![chunk_size, stage.global_work_dims[1], stage.global_work_dims[2]][..work_dim].to_vec();
             
-            let kernel = stage.kernel.clone();
+            let kernel = stage.kernel;
             // In a pipeline, we MUST set args for EVERY enqueuing because we share the kernel object
             // across stages potentially, OR different queues.
             // Actually, OpenCL kernels hold their state. Set args must happen before enqueue.
@@ -215,7 +215,7 @@ impl<'a> PipelineBuilder<'a> {
 /// Helper to configure a single stage within a pipeline.
 pub struct StageBuilder<'a> {
     pipeline_builder: PipelineBuilder<'a>,
-    kernel: ClKernel,
+    kernel: &'a ClKernel,
     kernel_args: Vec<KernelArg<'a>>,
     global_work_dims: [usize; 3],
     global_work_offset: [usize; 3],

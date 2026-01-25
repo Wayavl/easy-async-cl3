@@ -30,11 +30,11 @@ async fn test_simple_pipeline() -> Result<(), ClError> {
     // 3. Pipeline: (a + b) * 2.0
     // Result should be (10 + 5) * 2 = 30
     let report = executor.create_pipeline()
-        .add_stage(k_add, size, 1, 1)
+        .add_stage(&k_add, size, 1, 1)
             .arg_buffer(0, &buf_a)
             .arg_buffer(1, &buf_b)
             .finish()
-        .add_stage(k_mul, size, 1, 1)
+        .add_stage(&k_mul, size, 1, 1)
             .arg_buffer(0, &buf_a)
             .arg_scalar(1, 2.0f32)
             .finish()
