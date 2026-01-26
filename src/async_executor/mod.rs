@@ -1,5 +1,5 @@
-mod task_builder;
-mod kernel_arg;
+pub mod task_builder;
+pub mod kernel_arg;
 pub mod pipeline_task;
 use std::os::raw::c_void;
 use std::sync::Arc;
